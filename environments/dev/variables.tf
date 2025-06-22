@@ -72,12 +72,12 @@ variable "karpenter_chart_version" {
 ############################
 # Remote state backend     #
 ############################
-variable "tf_state_bucket" {
-  description = "S3 bucket where Terraform state is stored."
-  type        = string
-}
+# variable "tf_state_bucket" {
+#   description = "S3 bucket where Terraform state is stored."
+#   type        = string
+# }
 
-variable "tf_state_dynamodb_table" {
-  description = "DynamoDB table for state locking."
-  type        = string
-}
+# variable "tf_state_dynamodb_table" {
+#   description = "DynamoDB table for state locking."
+#   type        = string
+# }

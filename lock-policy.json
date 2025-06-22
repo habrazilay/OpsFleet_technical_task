@@ -1,0 +1,22 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "TerraformStateLocking",
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:DescribeTable",
+          "dynamodb:CreateTable",
+          "dynamodb:DeleteTable",
+          "dynamodb:ListTables",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:Scan",
+          "dynamodb:Query"
+        ],
+        "Resource": "arn:aws:dynamodb:us-east-1:503561459373:table/opsfleet-tflock-dev"
+      }
+    ]
+  }
+  
