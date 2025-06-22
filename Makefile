@@ -1,12 +1,14 @@
 ENV ?= dev
-TFVARS = environments/$(ENV)/$(ENV).tfvars
-BACKEND = environments/$(ENV)/backend-$(ENV).hcl
+TFVARS  = $(ENV).tfvars          # dev.tfvars, staging.tfvars, …
+BACKEND = backend-$(ENV).hcl     # backend-dev.hcl, backend-staging.hcl, …
 
 init:
-	terraform -chdir=environments/$(ENV) init -backend-config=$(BACKEND)
+	terraform -chdir=environments/$(ENV) init \
+		-backend-config=$(BACKEND)
 
 plan: init
-	terraform -chdir=environments/$(ENV) plan -var-file=$(TFVARS)
+	terraform -chdir=environments/$(ENV) plan \
+		-var-file=$(TFVARS)
 
 apply: init
 	terraform -chdir=environments/$(ENV) apply -var-file=$(TFVARS)
