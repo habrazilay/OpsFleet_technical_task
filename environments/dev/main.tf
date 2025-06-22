@@ -53,16 +53,18 @@ module "eks" {
   }
 }
 
-# module "karpenter" {
-#   source = "../../modules/karpenter"
+module "karpenter" {
+  source = "../../modules/karpenter"
 
-#   cluster_name        = module.eks.cluster_name
-#   cluster_endpoint    = module.eks.cluster_endpoint
-#   oidc_provider_arn   = module.eks.oidc_provider_arn
-#   private_subnet_ids  = module.vpc.private_subnets
-#   helm_chart_version  = var.karpenter_chart_version
+  cluster_name       = module.eks.cluster_name
+  cluster_endpoint   = module.eks.cluster_endpoint
+  oidc_provider_arn  = module.eks.oidc_provider_arn
+  private_subnet_ids = module.vpc.private_subnets
+  helm_chart_version = var.karpenter_chart_version
 
-#   tags = {
-#     "Project" = var.project
-#   }
-# }
+  tags = {
+    Org  = local.org
+    Env  = local.env
+    Workload = "eks"
+  }
+}
