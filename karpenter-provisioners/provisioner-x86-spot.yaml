@@ -1,0 +1,21 @@
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: x86-spot
+spec:
+  template:
+    metadata:
+      labels:
+        kubernetes.io/arch: amd64
+    spec:
+      nodeClassRef:
+        name: spot-default
+      requirements:
+      - key: "karpenter.sh/capacity-type"
+        operator: In
+        values: ["spot"]
+      - key: "node.kubernetes.io/instance-type"
+        operator: In
+        values: ["t4g.small", "m7g.large", "c7g.large"]
+  limits:
+    cpu: "128"
