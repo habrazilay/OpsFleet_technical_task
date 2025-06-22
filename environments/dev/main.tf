@@ -1,40 +1,51 @@
 locals {
+  org     = "opsfleet"
+  env     = var.environment          # "dev"
+  region  = var.aws_region           # "us-east-1"
+
+  # Workload bases
+  eks_base     = "${local.org}-eks-${local.env}-${local.region}"
+  tfstate_base = "${local.org}-tfstate-${local.env}-${local.region}"
+
   azs = slice(data.aws_availability_zones.available.names, 0, var.az_count)
 }
+
 
 module "vpc" {
   source = "../../modules/vpc"
 
-  name         = "${var.project}-vpc"
+  name         = "${local.eks_base}-vpc"     # <— was "${var.project}-vpc"
   cidr         = var.vpc_cidr
   azs          = local.azs
-  cluster_name = "${var.project}-eks"
+  cluster_name = local.eks_base              # <— was "${var.project}-eks"
 
-  enable_nat_gateway = true            # or var.enable_nat_gateway if you expose it
-  single_nat_gateway = false           # flip to true to save $
+  enable_nat_gateway = true
+  single_nat_gateway = false
 
   tags = {
-    Project = var.project
-    Env     = "dev"
+    Org  = local.org
+    Env  = local.env
+    Workload = "eks"
   }
 }
+
 
 
 module "eks" {
   source = "../../modules/eks"
 
-  cluster_name     = "${var.project}-eks"
-  cluster_version  = var.cluster_version
+  cluster_name    = local.eks_base           # <— was "${var.project}-eks"
+  cluster_version = var.cluster_version
 
-  vpc_id           = module.vpc.id
-  private_subnets  = module.vpc.private_subnets
+  vpc_id          = module.vpc.id
+  private_subnets = module.vpc.private_subnets
 
   tags = {
-    Project = var.project
-    Env     = "dev"
+    Org  = local.org
+    Env  = local.env
+    Workload = "eks"
   }
 }
-
 
 # module "karpenter" {
 #   source = "../../modules/karpenter"
