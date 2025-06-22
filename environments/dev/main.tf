@@ -1,7 +1,13 @@
+#environments/dev/main.tf
+ 
+ data "aws_availability_zones" "available" {
+  state = "available"
+}
+
 locals {
   org     = "opsfleet"
-  env     = var.environment          # "dev"
-  region  = var.aws_region           # "us-east-1"
+  env     = var.environment
+  region  = var.aws_region
 
   # Workload bases
   eks_base     = "${local.org}-eks-${local.env}-${local.region}"
@@ -20,7 +26,7 @@ module "vpc" {
   cluster_name = local.eks_base              # <— was "${var.project}-eks"
 
   enable_nat_gateway = true
-  single_nat_gateway = false
+  single_nat_gateway = var.single_nat_gateway
 
   tags = {
     Org  = local.org

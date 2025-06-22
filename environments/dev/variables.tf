@@ -48,6 +48,12 @@ variable "az_count" {
   }
 }
 
+variable "single_nat_gateway" {
+  description = "Use one shared NAT Gateway (true) or one per AZ (false)"
+  type        = bool
+  default     = true   # cheaper for dev
+}
+
 ############################
 # EKS                      #
 ############################
