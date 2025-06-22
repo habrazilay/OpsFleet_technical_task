@@ -23,28 +23,29 @@ module "vpc" {
 module "eks" {
   source = "../../modules/eks"
 
-  cluster_name    = "${var.project}-eks"
-  cluster_version = var.cluster_version
-  vpc_id          = module.vpc.id
-  private_subnets = module.vpc.private_subnets
-  public_subnets  = module.vpc.public_subnets
+  cluster_name     = "${var.project}-eks"
+  cluster_version  = var.cluster_version
 
-  enable_irsa = true
+  vpc_id           = module.vpc.id
+  private_subnets  = module.vpc.private_subnets
+
   tags = {
-    "Project" = var.project
+    Project = var.project
+    Env     = "dev"
   }
 }
 
-module "karpenter" {
-  source = "../../modules/karpenter"
 
-  cluster_name        = module.eks.cluster_name
-  cluster_endpoint    = module.eks.cluster_endpoint
-  oidc_provider_arn   = module.eks.oidc_provider_arn
-  private_subnet_ids  = module.vpc.private_subnets
-  helm_chart_version  = var.karpenter_chart_version
+# module "karpenter" {
+#   source = "../../modules/karpenter"
 
-  tags = {
-    "Project" = var.project
-  }
-}
+#   cluster_name        = module.eks.cluster_name
+#   cluster_endpoint    = module.eks.cluster_endpoint
+#   oidc_provider_arn   = module.eks.oidc_provider_arn
+#   private_subnet_ids  = module.vpc.private_subnets
+#   helm_chart_version  = var.karpenter_chart_version
+
+#   tags = {
+#     "Project" = var.project
+#   }
+# }

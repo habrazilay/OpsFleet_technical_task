@@ -1,3 +1,9 @@
+variable "environment" {
+  description = "Deployment stage (dev | staging | prod). Used only for tagging and names."
+  type        = string
+  default     = "dev"
+}
+
 ############################
 # Global project settings  #
 ############################
