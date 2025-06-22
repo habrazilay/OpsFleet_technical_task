@@ -1,15 +1,18 @@
 ENV ?= dev
 TFVARS  = $(ENV).tfvars          # dev.tfvars, staging.tfvars, …
+PLAN  ?= tfplan            		 # binary
+PLANJSON ?= plan.json      		 # human-readable
 # BACKEND = backend-$(ENV).hcl     # backend-dev.hcl, backend-staging.hcl, …
 
 init:
 	# terraform -chdir=environments/$(ENV) init \
 	# 	-backend-config=$(BACKEND)
 	terraform -chdir=environments/$(ENV) init -reconfigure	
-
+	
 plan: init
 	terraform -chdir=environments/$(ENV) plan \
-		-var-file=$(TFVARS)
+		-var-file=$(TFVARS) -out=$(PLAN)
+	terraform -chdir=environments/$(ENV) show -json $(PLAN) > $(PLANJSON)
 
 apply: init
 	terraform -chdir=environments/$(ENV) apply -var-file=$(TFVARS)
