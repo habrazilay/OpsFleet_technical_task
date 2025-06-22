@@ -132,3 +132,8 @@ Using AWS Organizations for centralized billing and control.
 ## 📄 License
 
 MIT License
+
+
+**Next step:** save the content above as `README.md`, commit (`git commit -m "docs: complete POC README"`), and push.  
+Once the NodeClass + two NodePools YAMLs are in `karpenter/`, the repository fulfils every bullet in the technical task.
+
