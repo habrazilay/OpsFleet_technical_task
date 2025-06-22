@@ -3,8 +3,9 @@ TFVARS  = $(ENV).tfvars          # dev.tfvars, staging.tfvars, …
 # BACKEND = backend-$(ENV).hcl     # backend-dev.hcl, backend-staging.hcl, …
 
 init:
-	terraform -chdir=environments/$(ENV) init \
-		-backend-config=$(BACKEND)
+	# terraform -chdir=environments/$(ENV) init \
+	# 	-backend-config=$(BACKEND)
+	terraform -chdir=environments/$(ENV) init -reconfigure	
 
 plan: init
 	terraform -chdir=environments/$(ENV) plan \
@@ -15,4 +16,6 @@ apply: init
 
 destroy: init
 	terraform -chdir=environments/$(ENV) destroy -var-file=$(TFVARS)
+
+
 
