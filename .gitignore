@@ -1,0 +1,7 @@
+**/.terraform/*
+*.tfstate*
+.terraform.lock.hcl
+# VS Code
+.vscode/*
+# macOS & Linux cruft
+.DS_Store
