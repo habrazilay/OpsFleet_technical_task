@@ -9,7 +9,7 @@ variable "cidr" {
 }
 
 variable "azs" {
-  description = "List of AZs to span (e.g. [\"eu-central-1a\", ...])"
+  description = "List of AZs to span (e.g. [\"us-east-1\", ...])"
   type        = list(string)
   validation {
     condition     = length(var.azs) >= 2
