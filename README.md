@@ -7,30 +7,44 @@ This project is a proof-of-concept for automating the deployment of an AWS EKS c
 ## 📦 Project Structure
 
 ```
-eks-karpenter-spot-graviton/
-├── .github/
-│   └── workflows/
-│       ├── terraform-plan.yml
-│       └── terraform-apply.yml
-├── modules/
-│   ├── vpc/                    # opinionated VPC wrapper
-│   ├── eks/                    # thin wrapper around terraform-aws-modules/eks
-│   └── karpenter/              # Helm release + IRSA
-├── karpenter-provisioners/
-│   ├── spot-x86.yaml           # amd64 Spot provisioning rules
-│   └── spot-arm.yaml           # arm64 Spot provisioning rules
-├── sample-manifests/
-│   ├── deployment-x86.yaml
-│   └── deployment-arm.yaml
+OpsFleet_technical_task/
 ├── environments/
-│   └── dev/
+│   ├── dev/
+│   │   ├── backend.tf
+│   │   ├── dev.tfvars
+│   │   ├── main.tf
+│   │   ├── old.backend-dev.hcl.notinuse
+│   │   ├── outputs.tf
+│   │   ├── provider.tf
+│   │   ├── terraform.tfstate
+│   │   ├── terraform.tfstate.1750763648.backup
+│   │   ├── terraform.tfstate.backup
+│   │   ├── tfplan
+│   │   ├── tfplan.vpc
+│   │   └── variables.tf
+│   └── eks-providers.tf
+├── karpenter-provisioners/
+│   ├── nodeclass.yaml
+│   ├── provisioner-arm64-spot.yaml
+│   └── provisioner-x86-spot.yaml
+├── lock-policy.json
+├── Makefile
+├── modules/
+│   ├── eks/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── karpenter/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── versions.tf
+│   └── vpc/
 │       ├── main.tf
-│       ├── variables.tf
-│       ├── backend.tf
-│       ├── versions.tf
-│       └── outputs.tf
+│       ├── outputs.tf
+│       └── variables.tf
 ├── README.md
-└── Makefile                    # init/plan/apply/destroy shortcuts
+└── terraform.tfstate.d/
+    └── dev/
 
 ```
 
