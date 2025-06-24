@@ -52,10 +52,11 @@ module "eks" {
     Workload = "eks"
   }
 }
-
+# -----------------------------------------------------------------------------
+# Karpenter module – installs the controller via Helm after EKS is ready
+# -----------------------------------------------------------------------------
 module "karpenter" {
-  source = "../../modules/karpenter"
-
+  source             = "../../modules/karpenter"
   cluster_name       = module.eks.cluster_name
   cluster_endpoint   = module.eks.cluster_endpoint
   oidc_provider_arn  = module.eks.oidc_provider_arn
@@ -63,8 +64,11 @@ module "karpenter" {
   helm_chart_version = var.karpenter_chart_version
 
   tags = {
-    Org  = local.org
-    Env  = local.env
+    Org      = local.org
+    Env      = local.env
     Workload = "eks"
   }
+
+  depends_on = [module.eks]
 }
+
