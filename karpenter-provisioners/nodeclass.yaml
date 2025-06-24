@@ -1,0 +1,15 @@
+apiVersion: karpenter.k8s.aws/v1beta1
+kind: EC2NodeClass
+metadata:
+  name: ec2-nodeclass-default
+spec:
+  amiFamily: AL2023
+  subnetSelectorTerms:
+  - tags:
+      karpenter.sh/discovery: opsfleet-eks-dev-us-east-1          # private subnets
+  securityGroupSelectorTerms:
+  - tags:
+      karpenter.sh/discovery: opsfleet-eks-dev-us-east-1
+  tags:
+    owner: daniel
+    project: opsfleet-test

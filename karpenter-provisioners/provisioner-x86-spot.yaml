@@ -7,15 +7,19 @@ spec:
     metadata:
       labels:
         kubernetes.io/arch: amd64
+        capacity: spot
     spec:
       nodeClassRef:
-        name: spot-default
+        name: ec2-nodeclass-default
       requirements:
       - key: "karpenter.sh/capacity-type"
         operator: In
         values: ["spot"]
       - key: "node.kubernetes.io/instance-type"
         operator: In
-        values: ["t4g.small", "m7g.large", "c7g.large"]
+        values: ["t3.small", "t3.medium", "c6i.medium", "m6i.medium"]
   limits:
-    cpu: "128"
+    cpu: "32"
+  weight: 5
+  disruption:
+    consolidationPolicy: WhenUnderutilized
