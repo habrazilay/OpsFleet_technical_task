@@ -26,7 +26,7 @@ module "this" {
       desired_size = 1
       min_size     = 1
       max_size     = 2
-
+      ami_type       = "AL2023_ARM_64_STANDARD"
       instance_types = ["t4g.small"]        # cheap Arm, steady on-demand
       capacity_type  = "ON_DEMAND"
 

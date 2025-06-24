@@ -20,5 +20,13 @@ apply: init
 destroy: init
 	terraform -chdir=environments/$(ENV) destroy -var-file=$(TFVARS)
 
+vpc: init
+	terraform -chdir=environments/$(ENV) apply \
+		-target=module.vpc -var-file=$(TFVARS)
+
+eks: init
+	terraform -chdir=environments/$(ENV) apply \
+		-target=module.eks -var-file=$(TFVARS)
+
 
 

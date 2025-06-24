@@ -83,3 +83,5 @@ resource "helm_release" "karpenter" {
 
   depends_on = [aws_iam_role_policy.karpenter]
 }
+
+
