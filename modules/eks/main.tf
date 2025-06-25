@@ -23,28 +23,19 @@ module "this" {
   ########################################
   eks_managed_node_groups = {
     core = {
-      desired_size = 1
-      min_size     = 1
-      max_size     = 2
-      ami_type       = "AL2023_ARM_64_STANDARD"
-      instance_types = ["t4g.small"]        # cheap Arm, steady on-demand
+      ami_type       = "AL2_ARM_64"       # ← back to Amazon Linux 2
+      instance_types = ["t4g.medium"]     # 2 vCPU / 4 GiB ‑ keeps the CNI happy
       capacity_type  = "ON_DEMAND"
-
-      labels = {
-        "node-role.kubernetes.io/core" = "true"
+      desired_size   = 1
+      min_size       = 1
+      max_size       = 2
+      iam_role_additional_policies = {
+        ssm = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
       }
-
-      # Taint so only system / Karpenter pods land here
-      taints = [
-        {
-          key    = "CriticalAddonsOnly"
-          value  = "true"
-          effect = "NO_SCHEDULE"
-        }
-      ]
     }
   }
 
+  
   ########################################
   # Core addons (Amazon-managed default) #
   ########################################
@@ -55,4 +46,26 @@ module "this" {
   }
 
   tags = var.tags
+
+  ########################################################################
+  # Use CONFIG_MAP only → the module will render aws‑auth
+  ########################################################################
+  authentication_mode = "API_AND_CONFIG_MAP"
+access_entries = {
+  tf_admin = {
+    principal_arn     = "arn:aws:iam::851725384896:user/daniel_schmidt"
+    kubernetes_groups = ["eks-admins"]
+    access_policy_associations = {
+      cluster_admin = {
+        policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+        access_scope = { type = "cluster" }
+      }
+    }
+  }
 }
+
+}
+
+
+
+

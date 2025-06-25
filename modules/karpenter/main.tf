@@ -1,20 +1,22 @@
 ###############################################################################
-# Karpenter controller via Helm + IAM role for service account (IRSA)        #
+# Karpenter controller – Helm + IRSA                                          #
 ###############################################################################
 
-##################
-# IAM -- IRSA role
-##################
+############################
+# 1. IAM role for service‑account (IRSA)
+############################
 data "aws_iam_policy_document" "assume_karpenter" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
+
     principals {
       type        = "Federated"
-      identifiers = [var.oidc_provider_arn]
+      identifiers = [var.oidc_provider_arn]          # from the EKS module
     }
+
     condition {
       test     = "StringEquals"
-      variable = "${replace(var.oidc_provider_arn, "arn:aws:iam::", "")}:sub"
+      variable = "${split("oidc-provider/", var.oidc_provider_arn)[1]}:sub"
       values   = ["system:serviceaccount:karpenter:karpenter"]
     }
   }
@@ -26,13 +28,16 @@ resource "aws_iam_role" "karpenter" {
   tags               = var.tags
 }
 
-locals {
-  karpenter_controller_policy = jsonencode({
-    Version = "2012-10-17",
+# minimal controller permissions (same as upstream docs)
+resource "aws_iam_role_policy" "karpenter" {
+  name   = "karpenter-controller"
+  role   = aws_iam_role.karpenter.id
+  policy = jsonencode({
+    Version = "2012-10-17"
     Statement = [
-      # ---- minimal policy from AWS docs (v0.37) ----
-      { Effect = "Allow",
-        Action = [
+      {
+        "Effect": "Allow",
+        "Action": [
           "ec2:CreateLaunchTemplate",
           "ec2:CreateFleet",
           "ec2:RunInstances",
@@ -40,48 +45,94 @@ locals {
           "ec2:TerminateInstances",
           "ec2:Describe*",
           "ec2:DeleteLaunchTemplate",
+          "ec2:DeleteTags",
+          "ec2:ModifyLaunchTemplate",
+          "ec2:ModifyInstanceAttribute"
+        ],
+        "Resource": "*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "pricing:GetProducts"
+        ],
+        "Resource": "*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
           "ssm:GetParameter"
         ],
+        "Resource": "arn:aws:ssm:*:*:parameter/aws/service/*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "iam:PassRole"
+        ],
+        "Resource": "arn:aws:iam::*:role/KarpenterNodeRole-*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "iam:CreateServiceLinkedRole"
+        ]
         Resource = "*"
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy" "karpenter" {
-  name   = "karpenter-controller"
-  role   = aws_iam_role.karpenter.id
-  policy = local.karpenter_controller_policy
-}
-
-##################
-# Kubernetes bits
-##################
+############################
+# 2.  Namespace
+############################
 resource "kubernetes_namespace" "karpenter" {
   metadata {
     name = "karpenter"
   }
 }
 
-resource "helm_release" "karpenter" {
-  name       = "karpenter"
-  chart      = "karpenter"
-  repository = "oci://public.ecr.aws/karpenter"
-  version    = var.helm_chart_version
-  namespace  = kubernetes_namespace.karpenter.metadata[0].name
+############################
+# 3.  Helm release
+############################
+locals {
+  karpenter_values = yamlencode({
+    controller = { replicas = 1 }
+    settings = {
+      clusterName     = var.cluster_name
+      clusterEndpoint = var.cluster_endpoint
+      # optional – Karpenter will create one iff absent
+      # interruptionQueueName = "${var.cluster_name}-karpenter-interrupt"
+    }
 
-  values = [yamlencode({
+    # allow scheduling on bootstrap node even if tainted
+    tolerations = [
+      {
+        key      = "CriticalAddonsOnly"
+        operator = "Exists"
+        effect   = "NoSchedule"
+      }
+    ]
+
     serviceAccount = {
       annotations = {
         "eks.amazonaws.com/role-arn" = aws_iam_role.karpenter.arn
       }
     }
-    clusterName = var.cluster_name
-    clusterEndpoint = var.cluster_endpoint
+
     logLevel = "info"
-  })]
+  })
+}
+
+resource "helm_release" "karpenter" {
+  name             = "karpenter"
+  namespace        = kubernetes_namespace.karpenter.metadata[0].name
+  repository       = "oci://public.ecr.aws/karpenter"
+  chart            = "karpenter"
+  version          = var.helm_chart_version
+  create_namespace = false
+
+  values = [local.karpenter_values]
 
   depends_on = [aws_iam_role_policy.karpenter]
 }
-
-
