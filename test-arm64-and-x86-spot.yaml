@@ -1,0 +1,37 @@
+# ---------- test-arm64.yaml ----------
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-arm64
+spec:
+  nodeSelector:
+    kubernetes.io/arch: arm64        # schedule only on Arm64 nodes
+  restartPolicy: Never
+  containers:
+    - name: busybox
+      image: public.ecr.aws/docker/library/busybox:1.36.1
+      command: ["sleep", "3600"]
+      resources:
+        requests:
+          cpu: 100m
+          memory: 64Mi
+
+---
+
+# ---------- test-x86.yaml ----------
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-x86
+spec:
+  nodeSelector:
+    kubernetes.io/arch: amd64        # schedule only on x86_64 nodes
+  restartPolicy: Never
+  containers:
+    - name: busybox
+      image: public.ecr.aws/docker/library/busybox:1.36.1
+      command: ["sleep", "3600"]
+      resources:
+        requests:
+          cpu: 100m
+          memory: 64Mi
