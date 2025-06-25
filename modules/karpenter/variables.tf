@@ -12,6 +12,7 @@ variable "private_subnet_ids"  {
      }
 variable "helm_chart_version"  {
      type = string 
+     default = "v0.38.2"
      }
 variable "tags"                {
      type = map(string) 

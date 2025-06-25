@@ -72,7 +72,7 @@ EOF
 variable "karpenter_chart_version" {
   description = "Helm chart version to install."
   type        = string
-  default     = "0.37.0"       # current latest - adjust as new versions release
+  default     = "0.40.0"       # ≥0.40 advertises compatibility with 1.32
 }
 
 ############################

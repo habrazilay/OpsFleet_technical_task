@@ -6,5 +6,5 @@
 # macOS & Linux cruft
 .DS_Store
 # Sensitive data
-daniel_schmidt*.csv
+*.csv
 

@@ -68,9 +68,15 @@ resource "aws_iam_role_policy" "karpenter" {
       {
         "Effect": "Allow",
         "Action": [
+          "iam:CreateInstanceProfile",
+          "iam:DeleteInstanceProfile",
+          "iam:AddRoleToInstanceProfile",
+          "iam:RemoveRoleFromInstanceProfile",
+          "iam:GetInstanceProfile",
+          "iam:TagInstanceProfile",
           "iam:PassRole"
         ],
-        "Resource": "arn:aws:iam::*:role/KarpenterNodeRole-*"
+        Resource = "*"
       },
       {
         "Effect": "Allow",
@@ -132,7 +138,14 @@ resource "helm_release" "karpenter" {
   version          = var.helm_chart_version
   create_namespace = false
 
-  values = [local.karpenter_values]
+  values = [
+    yamlencode({
+      controller = {
+        replicaCount = 2
+        affinity     = {}   # empty map removes the defaults
+      }
+    })
+  ]
 
   depends_on = [aws_iam_role_policy.karpenter]
 }
