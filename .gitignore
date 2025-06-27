@@ -1,5 +1,13 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+state/
+crash.log
+terraform.tfvars
+override.tf
+override.tf.json
 **/.terraform/*
-*.tfstate*
 .terraform.lock.hcl
 # VS Code
 .vscode/*
