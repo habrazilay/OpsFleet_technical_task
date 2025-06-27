@@ -35,8 +35,11 @@ module "this" {
       "kubernetes.io/role/internal-elb" = 1
       "karpenter.sh/discovery"          = var.cluster_name
       "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+      "kubernetes.io/cluster/${var.cluster_name}"         = "shared"
     },
   )
 
   tags = var.tags
 }
+
+
