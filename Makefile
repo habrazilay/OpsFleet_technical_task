@@ -1,32 +1,30 @@
 ENV ?= dev
-TFVARS  = $(ENV).tfvars          # dev.tfvars, staging.tfvars, …
-PLAN  ?= tfplan            		 # binary
-PLANJSON ?= plan.json      		 # human-readable
-# BACKEND = backend-$(ENV).hcl     # backend-dev.hcl, backend-staging.hcl, …
+TFDIR = environments/$(ENV)
+TFVARS = $(ENV).tfvars          # dev.tfvars, staging.tfvars, …
+PLAN = tfplan            		 # binary
+PLANJSON = plan.json      		 # human-readable
+STATE_FILE = terraform.tfstate
+BACKUP_DIR = backups/$(ENV)
 
 init:
-	# terraform -chdir=environments/$(ENV) init \
-	# 	-backend-config=$(BACKEND)
-	terraform -chdir=environments/$(ENV) init -reconfigure	
-	
+	@terraform -chdir=$(TFDIR) init -reconfigure	
+
 plan: init
-	terraform -chdir=environments/$(ENV) plan \
-		-var-file=$(TFVARS) -out=$(PLAN)
-	terraform -chdir=environments/$(ENV) show -json $(PLAN) > $(PLANJSON)
+	@terraform -chdir=$(TFDIR) plan -var-file=$(TFVARS) -out=$(PLAN)
+	@terraform -chdir=$(TFDIR) show -json $(PLAN) > $(PLANJSON)
+	@echo "✅ Plan complete and saved to $(PLAN) and $(PLANJSON)"
 
 apply: init
-	terraform -chdir=environments/$(ENV) apply -var-file=$(TFVARS)
+	@terraform -chdir=$(TFDIR) apply -var-file=$(TFVARS) -auto-approve
+	@mkdir -p $(BACKUP_DIR)
+	@cp $(TFDIR)/$(STATE_FILE) $(BACKUP_DIR)/$(STATE_FILE).$(shell date +"%Y%m%d-%H%M%S").backup
+	@echo "✅ State backup created at $(BACKUP_DIR)/"
 
 destroy: init
-	terraform -chdir=environments/$(ENV) destroy -var-file=$(TFVARS)
+	@terraform -chdir=$(TFDIR) destroy -var-file=$(TFVARS) -auto-approve
 
 vpc: init
-	terraform -chdir=environments/$(ENV) apply \
-		-target=module.vpc -var-file=$(TFVARS)
+	@terraform -chdir=$(TFDIR) apply -target=module.vpc -var-file=$(TFVARS) -auto-approve
 
 eks: init
-	terraform -chdir=environments/$(ENV) apply \
-		-target=module.eks -var-file=$(TFVARS)
-
-
-
+	@terraform -chdir=$(TFDIR) apply -target=module.eks -var-file=$(TFVARS) -auto-approve
