@@ -103,22 +103,9 @@ resource "kubernetes_namespace" "karpenter" {
 ############################
 locals {
   karpenter_values = yamlencode({
-    controller = { replicas = 1 }
-    settings = {
-      clusterName     = var.cluster_name
-      clusterEndpoint = var.cluster_endpoint
-      # optional – Karpenter will create one iff absent
-      # interruptionQueueName = "${var.cluster_name}-karpenter-interrupt"
+    controller = {
+      replicas = 1                              # 🡅 chart expects this key
     }
-
-    # allow scheduling on bootstrap node even if tainted
-    tolerations = [
-      {
-        key      = "CriticalAddonsOnly"
-        operator = "Exists"
-        effect   = "NoSchedule"
-      }
-    ]
 
     serviceAccount = {
       annotations = {
@@ -126,9 +113,20 @@ locals {
       }
     }
 
-    logLevel = "info"
+    settings = {
+      clusterName     = var.cluster_name
+      clusterEndpoint = var.cluster_endpoint
+    }
+
+    # allow scheduling on the bootstrap node
+    tolerations = [{
+      key      = "CriticalAddonsOnly"
+      operator = "Exists"
+      effect   = "NoSchedule"
+    }]
   })
 }
+
 
 resource "helm_release" "karpenter" {
   name             = "karpenter"

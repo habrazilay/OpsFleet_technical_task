@@ -45,7 +45,13 @@ module "this" {
     vpc-cni    = { most_recent = true }
   }
 
-  tags = var.tags
+  tags = merge(
+  var.tags,
+  {
+    Name                                             = "${var.cluster_name}-cluster"
+    "karpenter.sh/discovery/${var.cluster_name}"     = "shared"   # ← restore
+  }
+)
 
   ########################################################################
   # Use CONFIG_MAP only → the module will render aws‑auth
@@ -63,8 +69,9 @@ access_entries = {
     }
   }
 }
-
 }
+
+
 
 
 
