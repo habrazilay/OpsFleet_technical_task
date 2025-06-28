@@ -12,7 +12,7 @@ spec:
 
   securityGroupSelectorTerms:
   - tags:
-      aws:eks:cluster-name: opsfleet-eks-dev-us-east-1
+      "aws:eks:cluster-name": opsfleet-eks-dev-us-east-1
 
   tags:
     owner: daniel

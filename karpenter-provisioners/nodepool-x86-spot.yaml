@@ -4,8 +4,6 @@ metadata:
   name: x86-spot
 spec:
   weight: 10
-  limits:
-    cpu: "32"
   template:
     spec:
       nodeClassRef:

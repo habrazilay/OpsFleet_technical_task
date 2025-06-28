@@ -21,35 +21,6 @@ module "this" {
   enable_dns_hostnames = true
 
   # ── Tags for ALB & Karpenter subnet discovery ─────────────────────────────
-#   public_subnet_tags = merge(
-#     var.tags,
-#     {
-#       "kubernetes.io/role/elb" = 1
-#       "kubernetes.io/cluster/${var.cluster_name}" = "shared"
-#     },
-#   )
-
-#   private_subnet_tags = merge(
-#     var.tags,
-#     {
-#       "kubernetes.io/role/internal-elb" = 1
-#       "karpenter.sh/discovery"          = var.cluster_name
-#       "kubernetes.io/cluster/${var.cluster_name}" = "shared"
-#       "kubernetes.io/cluster/${var.cluster_name}"         = "shared"
-#     },
-#   )
-
-#   tags = var.tags
-# }
-
-# tags = merge(
-#   var.tags,
-#   {
-#     "kubernetes.io/cluster/${var.cluster_name}"      = "shared"
-#     "karpenter.sh/discovery/${var.cluster_name}"     = "shared"   # ← restore
-#     "kubernetes.io/role/internal-elb"                = "1"
-#   }
-# )
 
 tags = merge(var.tags, {
   "kubernetes.io/cluster/${var.cluster_name}" = "shared"
