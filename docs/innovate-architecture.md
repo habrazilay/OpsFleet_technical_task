@@ -78,73 +78,19 @@
 
 ```mermaid
 flowchart TD
-    %%───────────  EDGE  ───────────
-    Internet([Internet])
-    DNS(Route 53 DNS)
-    CF(CloudFront + WAF)
-
-    Internet --> DNS --> CF
-
-    %%───────────  VPC 10.0.0.0/16  ───────────
-    subgraph VPC["VPC (10.0.0.0/16) – 3× AZ"]
-        direction TB
-
-        %% Public tier (one per AZ; icons duplicated logically)
-        ALB[(ALB)]
-        class ALB networking
-
-        NAT1[NAT GW A]
-        NAT2[NAT GW B]
-        NAT3[NAT GW C]
-        class NAT1,NAT2,NAT3 networking
-
-        %% Private – EKS
-        subgraph EKS["EKS Cluster"]
-            IngressCtl(✚ Ingress Controller)
-            ReactPods(React Pods<br/>(no static))
-            FlaskPods(Flask Pods)
-            style ReactPods fill:#ffd6b3
-            style FlaskPods fill:#d0c5ff
+    subgraph VPC[Existing VPC 10.0.0.0/16]
+        ALB((ALB + WAF)) -- HTTPS --> SPA[React SPA]
+        ALB -- HTTPS --> API[Flask API]
+        API -- gRPC/REST --> RDS[(RDS PostgreSQL Multi‑AZ)]
+        style RDS fill:#f9f,stroke:#333,stroke-width:2px
+        subgraph EKS[EKS Cluster]
+            SPA & API --- CoreNG[Managed NG]
+            SPA & API --- SpotPools[Karpenter Spot Pools]
         end
-        ALB -->|443| IngressCtl
-        CF -->|/api/*| ALB
-
-        %% Private – Data
-        RDS[(RDS Aurora PG Multi-AZ 🔑)]
-        class RDS database
-
-        Secrets[Secrets Mgr 🔑]
-        S3[(S3 Bucket 📄)]
-        CF -->|static / | S3
-
-        %% Security-group flows (dashed)
-        classDef sgstroke stroke-dasharray: 5 5,stroke-width:2px
-        ALB -. sg .-> IngressCtl
-        IngressCtl -. sg .-> RDS
-
-        %% Egress to Internet
-        EKS -->|pull images| NAT1 & NAT2 & NAT3
-
-        %% Data plane
-        FlaskPods -->|5432| RDS
     end
-
-    %%───────────  DevOps & Registry  ───────────
-    subgraph DevOps["CI/CD & Registry"]
-        GA[GitHub Actions]
-        ECR[(Amazon ECR 🔑)]
-    end
-    GA -->|build/push| ECR
-    GA -->|kubectl apply / Helm| EKS
-    class GA devops
-    class ECR storage
-
-    %%───────────  Styles  ───────────
-    classDef networking fill:#90d4ff,color:#000
-    classDef database   fill:#ff9d9d,color:#000
-    classDef devops     fill:#ffb3ff,color:#000
-    classDef storage    fill:#ffd28c,color:#000
-
+    GitHub[GitHub Actions] -->|build/push| ECR((Amazon ECR))
+    GitHub -->|manifest| Argo[Argo CD]
+    Argo -->|sync| EKS
 ```
 
 ---
