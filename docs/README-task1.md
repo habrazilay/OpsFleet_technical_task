@@ -8,43 +8,57 @@ This project is a proof-of-concept for automating the deployment of an AWS EKS c
 
 ```
 OpsFleet_technical_task/
-├── environments/
-│   ├── dev/
-│   │   ├── backend.tf
-│   │   ├── dev.tfvars
-│   │   ├── main.tf
-│   │   ├── old.backend-dev.hcl.notinuse
-│   │   ├── outputs.tf
-│   │   ├── provider.tf
-│   │   ├── terraform.tfstate
-│   │   ├── terraform.tfstate.1750763648.backup
-│   │   ├── terraform.tfstate.backup
-│   │   ├── tfplan
-│   │   ├── tfplan.vpc
-│   │   └── variables.tf
-│   └── eks-providers.tf
-├── karpenter-provisioners/
+├── backups
+│   └── dev
+├── docs
+│   ├── innovate-architecture.md
+│   └── README-task1.md
+├── environments
+│   └── dev
+│       ├── backend.tf
+│       ├── dev.tfvars
+│       ├── main.tf
+│       ├── outputs.tf
+│       ├── providers.tf
+│       └── variables.tf
+├── infra
+│   ├── diagram.xml
+│   ├── diagram2.xml
+│   ├── Innovate Inc. Cloud Architecture.png
+│   ├── Innovate-HDL.png
+│   └── Innovate-HDL.xml
+├── karpenter-provisioners
 │   ├── nodeclass.yaml
-│   ├── provisioner-arm64-spot.yaml
-│   └── provisioner-x86-spot.yaml
+│   ├── nodepool-arm64-spot.yaml
+│   └── nodepool-x86-spot.yaml
 ├── lock-policy.json
 ├── Makefile
-├── modules/
-│   ├── eks/
+├── modules
+│   ├── eks
 │   │   ├── main.tf
 │   │   ├── outputs.tf
+│   │   ├── rbac-admin.yaml
 │   │   └── variables.tf
-│   ├── karpenter/
+│   ├── karpenter
+│   │   ├── assume-role-karpenter.json
 │   │   ├── main.tf
+│   │   ├── policy-karpenter-controller.json
 │   │   ├── variables.tf
 │   │   └── versions.tf
-│   └── vpc/
+│   ├── organization
+│   │   ├── main.tf
+│   │   └── variables.tf
+│   └── vpc
 │       ├── main.tf
 │       ├── outputs.tf
 │       └── variables.tf
+├── plan.json
 ├── README.md
-└── terraform.tfstate.d/
-    └── dev/
+├── scripts
+│   └── nuke-account.sh
+├── terraform.tfstate.d
+│   └── dev
+└── test-arm64-and-x86-spot.yaml
 
 ```
 
@@ -198,7 +212,7 @@ kubectl -n karpenter delete pod -l app.kubernetes.io/name=karpenter
 
 ```bash
 make destroy               # modules
-aws eks delete-cluster …   # if Terraform lost state
+aws eks delete-cluster --name opsfleet-eks-dev-us-east-1    # if state is lost
 bash nuke-account.sh       # ☢  danger – removes **all** resources in the account
 ```
 
