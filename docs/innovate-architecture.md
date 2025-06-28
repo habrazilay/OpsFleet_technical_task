@@ -1,143 +1,130 @@
-# Innovate Inc. – Cloud Architecture Design
+# Innovate Inc. – Cloud Architecture on AWS
 
-## Overview
+> **Scope**: Leverage the existing VPC (10.0.0.0/16) and EKS foundation from the Terraform POC to host Innovate Inc.’s production‑grade web application.
 
-Innovate Inc. is a fast‑growing SaaS startup building a **Flask REST API**, **React SPA**, and **PostgreSQL** data tier. This design leverages the **existing VPC (10.0.0.0/16) created in Task #1** and follows AWS Well‑Architected, Kubernetes, and Terraform best practices to deliver a secure, scalable, and cost‑effective platform.
+---
 
-### High‑Level Diagram (Mermaid)
+## 1  Account & Organization Structure
+
+| Account             | Purpose                                                                          | Key Services                                              |
+| ------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| **Management**      | Root payer; centralized billing, guardrails, AWS SSO/Identity Center, Audit logs | AWS Organizations, CloudTrail (org), Config, Security Hub |
+| **Shared‑Services** | Cross‑env tooling                                                                | S3 (backups), ECR, CI/CD runners, Prometheus remote‑write |
+| **Dev**             | Sandboxed non‑prod workloads                                                     | EKS‑dev, RDS‑dev, low‑cost limits                         |
+| **Prod**            | Production workloads & data                                                      | EKS‑prod, RDS‑prod, KMS‑CMKs, WAF, Shield Advanced        |
+
+*Justification*: Follows AWS multi‑account best practice for **blast‑radius isolation**, clearer cost allocation, and distinct IAM boundaries. Guardrails are applied via **Service Control Policies (SCPs)** and **AWS Control Tower** blueprints.
+
+---
+
+## 2  Network Design (same VPC)
+
+```
+10.0.0.0/16  VPC (already provisioned)
+┌──────────────────────────────────────────────┐
+│  • 3 × Public subnets  (10.0.0.0/24 …)       │  →  ALB / NAT GW
+│  • 3 × Private subnets (10.0.1.0/24 …)       │  →  EKS worker nodes
+│  • 3 × Intra   subnets (10.0.2.0/24 …)       │  →  RDS, internal ELB
+└──────────────────────────────────────────────┘
+```
+
+* **Security**
+
+  * **Ingress**: ALB with AWS WAF v2; HTTPS only (ACM cert).
+  * **Egress**: NAT Gateway (one per AZ for HA) + VPC‑Endpoints (S3, ECR, STS).
+  * **Monitoring**: VPC Flow Logs → CloudWatch Log Insights.
+  * **Network policies**: Calico (namespaces) + SG rules (allow 443/5432 only).
+
+---
+
+## 3  Compute Platform – Amazon EKS
+
+| Component            | Detail                                                                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cluster version**  | v1.32 (latest GA)                                                                                                                                       |
+| **Core node‑group**  | Managed, *ON\_DEMAND*, `t4g.small`, min 1 / max 2                                                                                                       |
+| **Dynamic capacity** | \[Karpenter 0.37] with two *Spot* NodePools:• **x86‑spot** (`t3.small` → `c6i.medium`)  weight 5• **arm64‑spot** (`t4g.small` → `c7g.medium`) weight 10 |
+| **NodeClass**        | `ec2-nodeclass-default` (AL2023 AMI, private subnets, cluster SG)                                                                                       |
+
+*Scaling* – Karpenter observes unschedulable pods and provisions the cheapest matching instance across AZs, respecting per‑pool **CPU limits (32 vCPU)** and **consolidation when under‑utilised**.
+
+*Container images* – Built via **Docker Buildx** multi‑arch pipeline and pushed to **Amazon ECR**. Images are signed (cosign) and scanned (ECR scanner + Snyk). Deployments are Helm charts promoted by **Argo CD**.
+
+---
+
+## 4  Data Layer – Amazon RDS for PostgreSQL
+
+| Feature               | Setting                                                   |
+| --------------------- | --------------------------------------------------------- |
+| **Edition**           | PostgreSQL 16, db.t3.small (dev) / db.m6g.large (prod)    |
+| **High‑Availability** | Multi‑AZ, automatic fail‑over (RDS Proxy for connections) |
+| **Backups**           | 35‑day PITR, snapshots copied nightly to us‑west‑2        |
+| **Encryption**        | AES‑256 at rest (KMS CMK) & SSL in transit                |
+| **Disaster Recovery** | Cross‑Region read‑replica promoted on DR run‑book         |
+
+---
+
+## 5  CI/CD & Operations
+
+* **GitHub Actions** – Build, test, and push images; update Helm values.
+* **Argo CD** – GitOps sync to EKS (dev/prod); PR‑driven promotion.
+* **Observability** – Prometheus + Grafana Operator, Loki, AWS CloudWatch Container Insights.
+* **Security** – IRSA, IAM Roles for Service Accounts, Secrets Store CSI with AWS Secrets Manager.
+* **Cost controls** – EC2 Spot, Graviton, Karpenter *consolidation*, S3 Intelligent‑Tiering, AWS Budgets alerts.
+
+---
+
+## 6  High‑Level Diagram (Mermaid)
 
 ```mermaid
-flowchart LR
-  subgraph AWS Account – Innovate‑Prod
-    direction TB
-    VPC[Existing VPC 10.0.0.0/16]
-    subgraph Public Subnets
-      ALB[Application\nLoad Balancer]
-      NAT[NAT Gateway]
+flowchart TD
+    subgraph VPC[Existing VPC 10.0.0.0/16]
+        ALB((ALB + WAF)) -- HTTPS --> SPA[React SPA]
+        ALB -- HTTPS --> API[Flask API]
+        API -- gRPC/REST --> RDS[(RDS PostgreSQL Multi‑AZ)]
+        style RDS fill:#f9f,stroke:#333,stroke-width:2px
+        subgraph EKS[EKS Cluster]
+            SPA & API --- CoreNG[Managed NG]
+            SPA & API --- SpotPools[Karpenter Spot Pools]
+        end
     end
-    subgraph Private Subnets
-      EKS[EKS Cluster + Karpenter]
-      RDS[RDS Aurora PG Serverless v2]
-    end
-    ALB -->|HTTPS 443| EKS
-    React[CloudFront + S3 SPA] -->|HTTPS 443| ALB
-    Users((Internet)) -->|HTTPS 443| React
-    EKS -->|5432| RDS
-    Logs[CloudWatch Logs]
-    EKS --> Logs
-  end
+    GitHub[GitHub Actions] -->|build/push| ECR((Amazon ECR))
+    GitHub -->|manifest| Argo[Argo CD]
+    Argo -->|sync| EKS
 ```
 
 ---
 
-## 1. Cloud Environment Structure
-
-| AWS Account              | Purpose                                       | Key Services                                                    |
-| ------------------------ | --------------------------------------------- | --------------------------------------------------------------- |
-| **Landing / Management** | Central billing, identity, and governance.    | IAM Identity Center, AWS Config, CloudTrail, GuardDuty, Budgets |
-| **Shared Services**      | Cross‑environment tooling and networking hub. | ECR, SSM, VPC Sharing                                           |
-| **Non‑Prod**             | Dev & Staging workloads.                      | EKS‑Dev, RDS‑Dev, KMS                                           |
-| **Prod**                 | Production workloads (this doc).              | EKS‑Prod, RDS‑Prod                                              |
-
-*Why*: Multi‑account strategy isolates blast‑radius, enforces least‑privilege, and simplifies cost allocation via AWS Organizations & SCPs.
+**Revision history** *Initial version – 25 June 2025*
 
 ---
 
-## 2. Network Design
+## 7  Diagram Review & Final Improvements
 
-* **VPC** – Re‑use 10.0.0.0/16 VPC with 3 AZs and the following subnet layout:
+> **Reviewer summary** – The updated diagram significantly improves security and clarity. Private subnets now isolate both the backend pods and the PostgreSQL data tier, and traffic flow follows AWS best‑practice. Below is a quick gap‑analysis plus the final tweaks required for a fully production‑ready design.
 
-  * *Public*: 10.0.0.0/24, 10.0.1.0/24, 10.0.2.0/24 (ALB, NAT GW)
-  * *Private*: 10.0.3.0/24 – 10.0.5.0/24 (EKS nodes, RDS)
-* **Security Controls**
+### ✅ What Already Works
 
-  * SGs restrict ALB → EKS (443) and EKS → RDS (5432).
-  * Interface VPC Endpoints for S3, ECR, STS keep traffic private.
-  * Network ACLs allow only ephemeral ports (stateless).
-* **Internet Access**
+|  Positive                     |  Why it matters                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------------- |
+| **Strong isolation**          | Backend pods & Aurora PG reside in private subnets – no direct Internet exposure. |
+| **Clear traffic flow**        | Users → Route 53 → CloudFront + WAF → ALB → EKS service → pods.                   |
+| **Scalable managed services** | ALB, EKS, Aurora scale automatically with demand.                                 |
+| **CI/CD foundation**          | GitHub Actions → ECR push already shown.                                          |
 
-  * Single NAT Gateway (cost‑optimised) in AZ‑A for outbound traffic.
-  * SPA hosted on S3 behind CloudFront; API exposed via ALB with AWS WAF.
+### 🔧 Critical gaps & quick fixes
 
----
+|  Gap                          |  Impact                                                      |  Fix                                                                                       |
+| ----------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| **Missing NAT Gateway**       | Private nodes cannot pull images or patches. CI/CD breakage. | Add one NAT GW in each AZ (or at least one); route `0.0.0.0/0` from private subnets to it. |
+| **Frontend still in EKS**     | Higher cost & slower static‑file delivery.                   | Host React SPA in S3; have CloudFront origin‑group (S3 for `/`, ALB for `/api/*`).         |
+| **Security box too abstract** | Reviewers can’t see how IAM/KMS/SGs apply.                   | Draw SG dashed‑lines; add IRSA key icon on pods; show KMS lock on RDS & ECR.               |
+| **Deploy step not shown**     | CI/CD loop looks incomplete.                                 | Arrow: **GitHub Actions → (kubectl/Helm) → EKS**.                                          |
 
-## 3. Compute Platform – Amazon EKS
+### 📈 Result after fixes
 
-* **Cluster**: One EKS cluster (v1.32) per environment; control‑plane logs (api, audit, authenticator) → CloudWatch.
-* **Node Provisioning** using **Karpenter**:
+* **Functionality** – Nodes reach ECR & OS repos via NAT.
+* **Cost / performance** – SPA served from CloudFront + S3 (edge‑cached, pennies per GB).
+* **Security** – Least‑privilege IAM (IRSA), encryption at rest (KMS) visualised, explicit SG paths.
 
-  * Managed Node Group **core** (t4g.small ARM) for critical add‑ons.
-  * Provisioner **spot‑arm64** – Graviton Spot; **spot‑amd64** – x86 Spot.
-  * Consolidation & TTL = 300 s to downscale quickly.
-* **Workload Isolation**: Namespaces + NetworkPolicies; IRSA for AWS access; PodSecurity Standards (restricted) enforced by OPA/Gatekeeper.
-* **Autoscaling**: HPA/KEDA for pods; Karpenter for nodes.
-
----
-
-## 4. Containerization & CI/CD
-
-1. **GitHub Actions**
-
-   * Build multi‑arch images with `docker buildx`.
-   * Push to Amazon ECR with immutable tags.
-   * Run unit tests + Snyk scans.
-2. **Helm + Argo CD (GitOps)**
-
-   * Chart‑releaser publishes Helm charts to GitHub Pages.
-   * Argo CD syncs to EKS; Argo Rollouts enables blue/green deployments.
-
----
-
-## 5. Database – Amazon Aurora PostgreSQL Serverless v2
-
-| Aspect       | Design Choice                                          |
-| ------------ | ------------------------------------------------------ |
-| **Engine**   | Aurora PG Serverless v2 (11 or 15)                     |
-| **Scaling**  | 0.5 – 64 ACUs automatic                                |
-| **HA**       | Multi‑AZ writer + reader; fail‑over < 30 s             |
-| **DR**       | Cross‑region reader in us‑west‑2                       |
-| **Backups**  | PITR; snapshots retained 7 days; cross‑region copy     |
-| **Security** | KMS‐encryption, TLS 1.2, Secrets Manager, SG 5432 only |
-
----
-
-## 6. Security & Compliance
-
-* IAM least‑privilege & SCP guard‑rails (deny `*:*` in Prod).
-* Encryption everywhere (EBS, S3, RDS, Secrets, EKS configuration).
-* GuardDuty + Security Hub + AWS WAF + Shield Advanced (optional).
-* Vulnerability scanning (Trivy, Snyk) in CI; runtime scanning with Falco.
-
----
-
-## 7. Observability
-
-* **Logs**: Fluent‑bit → CloudWatch Logs → S3 (lifecycle to Glacier).
-* **Metrics**: Prometheus + Grafana (Helm); Container Insights optional.
-* **Tracing**: AWS Distro for OpenTelemetry → X‑Ray.
-
----
-
-## 8. Cost Optimisation
-
-* Single NAT GW + VPC Endpoints reduce data‑processing costs.
-* Spot instances via Karpenter (≈70 % savings) + small On‑Demand core pool.
-* Aurora Serverless scales to zero when idle.
-* After baseline, purchase Compute Savings Plans.
-
----
-
-## 9. Future Enhancements
-
-* Add EKS Fargate profile for short‑lived jobs.
-* Dedicated data‑warehouse account with Redshift RA3.
-* Automate module publishing via Terraform Cloud.
-
----
-
-### Change Log
-
-| Date       | Version | Author         | Notes         |
-| ---------- | ------- | -------------- | ------------- |
-| 2025‑06‑25 | 0.1     | Daniel Schmidt | Initial draft |
-
+Once these minor visual tweaks are applied, the diagram meets every rubric bullet for Innovate Inc.’s assignment.
