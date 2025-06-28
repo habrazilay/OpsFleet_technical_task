@@ -29,7 +29,7 @@ module "this" {
       capacity_type  = "ON_DEMAND"
       desired_size   = 1
       min_size       = 1
-      max_size       = 2
+      max_size       = 3
       iam_role_additional_policies = {
         ssm = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
       }

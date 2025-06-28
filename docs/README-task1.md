@@ -204,5 +204,16 @@ bash nuke-account.sh       # ☢  danger – removes **all** resources in the ac
 
 ---
 
+## 8.Quick demo
+
+```bash
+# provision spot pools
+kubectl apply -f karpenter-provisioners/
+
+# run one pod on Graviton, one on x86
+kubectl apply -f test-arm64-and-x86-spot.yaml
+
+--
+
 *(The remainder of the original README – design goals, module authors,
 licence – stays unchanged below this line.)*

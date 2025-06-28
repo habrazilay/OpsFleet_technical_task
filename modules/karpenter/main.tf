@@ -41,70 +41,6 @@ resource "aws_iam_role_policy_attachment" "karpenter_controller_attach" {
 }
 
 
-
-# minimal controller permissions (same as upstream docs)
-# resource "aws_iam_role_policy" "karpenter" {
-#   name   = "karpenter-controller"
-#   role   = aws_iam_role.karpenter.id
-#   policy = jsonencode({
-#     Version = "2012-10-17"
-#     Statement = [
-#       {
-#         "Effect": "Allow",
-#         "Action": [
-#           "ec2:CreateLaunchTemplate",
-#           "ec2:CreateFleet",
-#           "ec2:RunInstances",
-#           "ec2:CreateTags",
-#           "ec2:TerminateInstances",
-#           "ec2:Describe*",
-#           "ec2:DeleteLaunchTemplate",
-#           "ec2:DeleteTags",
-#           "ec2:ModifyLaunchTemplate",
-#           "ec2:ModifyInstanceAttribute"
-#         ],
-#         "Resource": "*"
-#       },
-#       {
-#         "Effect": "Allow",
-#         "Action": [
-#           "pricing:GetProducts"
-#         ],
-#         "Resource": "*"
-#       },
-#       {
-#         "Effect": "Allow",
-#         "Action": [
-#           "ssm:GetParameter"
-#         ],
-#         "Resource": "arn:aws:ssm:*:*:parameter/aws/service/*"
-#       },
-#       {
-#         "Effect": "Allow",
-#         "Action": [
-#           "iam:CreateInstanceProfile",
-#           "iam:DeleteInstanceProfile",
-#           "iam:AddRoleToInstanceProfile",
-#           "iam:RemoveRoleFromInstanceProfile",
-#           "iam:GetInstanceProfile",
-#           "iam:TagInstanceProfile",
-#           "iam:PassRole",
-#           "iam:TagInstanceProfile",
-#           "iam:TagRole"
-#         ],
-#         Resource = "*"
-#       },
-#       {
-#         "Effect": "Allow",
-#         "Action": [
-#           "iam:CreateServiceLinkedRole"
-#         ]
-#         Resource = "*"
-#       }
-#     ]
-#   })
-# }
-
 ############################
 # 2.  Namespace
 ############################
@@ -141,29 +77,6 @@ locals {
     }]
   })
 }
-
-
-# resource "helm_release" "karpenter" {
-#   name       = "karpenter"
-#   namespace  = kubernetes_namespace.karpenter.metadata[0].name
-
-#   repository = "oci://public.ecr.aws/karpenter"
-#   chart      = "karpenter"
-#   version    = "0.37.2"               
-#   timeout    = 600
-
-#     set {
-#     name  = "controller.replicaCount"
-#     value = 2
-#   }
-
-#   values = [local.karpenter_values]
-
-#   recreate_pods   = true  
-#   cleanup_on_fail = true
-
-#   depends_on = [aws_iam_role_policy.karpenter]
-# }
 
 resource "helm_release" "karpenter" {
   name       = "karpenter"
