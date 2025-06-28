@@ -1,130 +1,127 @@
-# Innovate Inc. – Cloud Architecture on AWS
+# Innovate Inc. AWS Architecture Design Document
 
-> **Scope**: Leverage the existing VPC (10.0.0.0/16) and EKS foundation from the Terraform POC to host Innovate Inc.’s production‑grade web application.
+## 1. Executive Summary
 
----
-
-## 1  Account & Organization Structure
-
-| Account             | Purpose                                                                          | Key Services                                              |
-| ------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| **Management**      | Root payer; centralized billing, guardrails, AWS SSO/Identity Center, Audit logs | AWS Organizations, CloudTrail (org), Config, Security Hub |
-| **Shared‑Services** | Cross‑env tooling                                                                | S3 (backups), ECR, CI/CD runners, Prometheus remote‑write |
-| **Dev**             | Sandboxed non‑prod workloads                                                     | EKS‑dev, RDS‑dev, low‑cost limits                         |
-| **Prod**            | Production workloads & data                                                      | EKS‑prod, RDS‑prod, KMS‑CMKs, WAF, Shield Advanced        |
-
-*Justification*: Follows AWS multi‑account best practice for **blast‑radius isolation**, clearer cost allocation, and distinct IAM boundaries. Guardrails are applied via **Service Control Policies (SCPs)** and **AWS Control Tower** blueprints.
+Innovate Inc. will launch its Python/Flask REST API and React single-page application (SPA) on AWS using Amazon EKS (managed Kubernetes). The architecture is designed to be lean and cost-effective at launch (leveraging Fargate and serverless components) while providing scalability to millions of users through Spot/Graviton nodes, Multi-AZ RDS PostgreSQL, and optional cross-region failover. Security, automation, and cost-optimization are embedded from day one.
 
 ---
 
-## 2  Network Design (same VPC)
+## 2. Account / Project Structure
 
-```
-10.0.0.0/16  VPC (already provisioned)
-┌──────────────────────────────────────────────┐
-│  • 3 × Public subnets  (10.0.0.0/24 …)       │  →  ALB / NAT GW
-│  • 3 × Private subnets (10.0.1.0/24 …)       │  →  EKS worker nodes
-│  • 3 × Intra   subnets (10.0.2.0/24 …)       │  →  RDS, internal ELB
-└──────────────────────────────────────────────┘
-```
+| Account                          | Purpose                                     | Key Services                                        | Notes                                                        |
+| -------------------------------- | ------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------ |
+| **Management / Shared-Services** | Centralized security, billing, IAM, logging | IAM Identity Center, GuardDuty, AWS Config, S3 Logs | No workloads. Central log archive. Budget tracking.          |
+| **Sandbox / Dev**                | Testing, feature development                | EKS-Dev, RDS-Dev (small), S3 Artifacts              | Budget limits, auto-shutdown for cost savings.               |
+| **Production**                   | User-facing workloads & data                | EKS-Prod, RDS-Prod, CloudFront, KMS, WAF            | Strict SCPs, delegated GuardDuty admin, no public DB access. |
 
-* **Security**
-
-  * **Ingress**: ALB with AWS WAF v2; HTTPS only (ACM cert).
-  * **Egress**: NAT Gateway (one per AZ for HA) + VPC‑Endpoints (S3, ECR, STS).
-  * **Monitoring**: VPC Flow Logs → CloudWatch Log Insights.
-  * **Network policies**: Calico (namespaces) + SG rules (allow 443/5432 only).
+**Why three accounts?**
+Follows AWS Well-Architected best practices for isolation, billing clarity, blast-radius reduction, and least-privilege access.
 
 ---
 
-## 3  Compute Platform – Amazon EKS
+## 3. Networking Design
 
-| Component            | Detail                                                                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Cluster version**  | v1.32 (latest GA)                                                                                                                                       |
-| **Core node‑group**  | Managed, *ON\_DEMAND*, `t4g.small`, min 1 / max 2                                                                                                       |
-| **Dynamic capacity** | \[Karpenter 0.37] with two *Spot* NodePools:• **x86‑spot** (`t3.small` → `c6i.medium`)  weight 5• **arm64‑spot** (`t4g.small` → `c7g.medium`) weight 10 |
-| **NodeClass**        | `ec2-nodeclass-default` (AL2023 AMI, private subnets, cluster SG)                                                                                       |
+**VPC Layout:** One VPC per account:
 
-*Scaling* – Karpenter observes unschedulable pods and provisions the cheapest matching instance across AZs, respecting per‑pool **CPU limits (32 vCPU)** and **consolidation when under‑utilised**.
+* Dev: `10.10.0.0/16`
+* Prod: `10.20.0.0/16`
 
-*Container images* – Built via **Docker Buildx** multi‑arch pipeline and pushed to **Amazon ECR**. Images are signed (cosign) and scanned (ECR scanner + Snyk). Deployments are Helm charts promoted by **Argo CD**.
+Each VPC spans **3 Availability Zones**:
 
----
+* **Public Subnet (/20)**: ALB, NAT Gateway (one per AZ)
+* **Private-App Subnet (/20)**: EKS/Fargate ENIs
+* **Private-Data Subnet (/24)**: RDS, ElastiCache (future)
 
-## 4  Data Layer – Amazon RDS for PostgreSQL
+**Security Features:**
 
-| Feature               | Setting                                                   |
-| --------------------- | --------------------------------------------------------- |
-| **Edition**           | PostgreSQL 16, db.t3.small (dev) / db.m6g.large (prod)    |
-| **High‑Availability** | Multi‑AZ, automatic fail‑over (RDS Proxy for connections) |
-| **Backups**           | 35‑day PITR, snapshots copied nightly to us‑west‑2        |
-| **Encryption**        | AES‑256 at rest (KMS CMK) & SSL in transit                |
-| **Disaster Recovery** | Cross‑Region read‑replica promoted on DR run‑book         |
+* NAT Gateway enables egress without exposing internal resources
+* Security Groups restrict access (e.g., ALB only allows HTTPS 443 to API)
+* WAFv2 + CloudFront in front of ALB
+* VPC Flow Logs stream to central log account (S3, 7-day retention)
 
 ---
 
-## 5  CI/CD & Operations
+## 4. Compute Platform – Amazon EKS
 
-* **GitHub Actions** – Build, test, and push images; update Helm values.
-* **Argo CD** – GitOps sync to EKS (dev/prod); PR‑driven promotion.
-* **Observability** – Prometheus + Grafana Operator, Loki, AWS CloudWatch Container Insights.
-* **Security** – IRSA, IAM Roles for Service Accounts, Secrets Store CSI with AWS Secrets Manager.
-* **Cost controls** – EC2 Spot, Graviton, Karpenter *consolidation*, S3 Intelligent‑Tiering, AWS Budgets alerts.
+### 4.1 Cluster Layout
 
----
+| Node Group                    | Type                  | Use-Case                         | Cost Profile                    |
+| ----------------------------- | --------------------- | -------------------------------- | ------------------------------- |
+| **Fargate Profile (default)** | Serverless            | Low initial traffic, system pods | Pay-per-pod, scale-to-zero      |
+| **Managed NG – System**       | t4g.small (On-Demand) | kube-system, ALB Controller      | Always ≥1 per AZ                |
+| **Karpenter – Spot arm64**    | Graviton (m7g, c7g)   | API & SPA pods                   | \~60–70% cheaper than On-Demand |
+| **Karpenter – Spot x86**      | AMD (m7a, c7a)        | x86-only workloads               | Backup for incompatible images  |
 
-## 6  High‑Level Diagram (Mermaid)
+* **Scaling:** Horizontal Pod Autoscaler (HPA) + Karpenter (sub-minute response)
+* **Isolation:** Namespaces per stage (e.g., `prod`, `dev`, `ci-preview-*`)
+* **IAM Roles for Service Accounts (IRSA):** ALB Controller, External-DNS, Cluster Autoscaler
 
-```mermaid
-flowchart TD
-    subgraph VPC[Existing VPC 10.0.0.0/16]
-        ALB((ALB + WAF)) -- HTTPS --> SPA[React SPA]
-        ALB -- HTTPS --> API[Flask API]
-        API -- gRPC/REST --> RDS[(RDS PostgreSQL Multi‑AZ)]
-        style RDS fill:#f9f,stroke:#333,stroke-width:2px
-        subgraph EKS[EKS Cluster]
-            SPA & API --- CoreNG[Managed NG]
-            SPA & API --- SpotPools[Karpenter Spot Pools]
-        end
-    end
-    GitHub[GitHub Actions] -->|build/push| ECR((Amazon ECR))
-    GitHub -->|manifest| Argo[Argo CD]
-    Argo -->|sync| EKS
-```
+### 4.2 Container Strategy
+
+* **Image Build:** Multi-arch (linux/arm64, amd64) using Docker `buildx` in GitHub Actions
+* **Container Registry:** Amazon ECR (with image scanning)
+* **Deployment:** Helm charts version-controlled; Argo CD handles GitOps deployments
 
 ---
 
-**Revision history** *Initial version – 25 June 2025*
+## 5. Database Layer – PostgreSQL
+
+| Feature               | Details                                     |
+| --------------------- | ------------------------------------------- |
+| **Service**           | Amazon RDS PostgreSQL (Multi-AZ)            |
+| **Backups**           | Daily snapshots (7–35 days) to S3 Glacier   |
+| **High Availability** | Multi-AZ standby, automatic failover (<60s) |
+| **Disaster Recovery** | Future: Cross-region replica (eu-west-1)    |
+| **Encryption**        | AES-256 at rest via KMS, TLS in transit     |
 
 ---
 
-## 7  Diagram Review & Final Improvements
+## 6. CI/CD & Infrastructure as Code
 
-> **Reviewer summary** – The updated diagram significantly improves security and clarity. Private subnets now isolate both the backend pods and the PostgreSQL data tier, and traffic flow follows AWS best‑practice. Below is a quick gap‑analysis plus the final tweaks required for a fully production‑ready design.
+* **Source Control:** GitHub
+* **Workflows:**
 
-### ✅ What Already Works
+  * Terraform (`/infra`): PR plan → Merge apply (assumes role via OIDC)
+  * Docker Buildx matrix builds → Push to ECR
+  * Helm deploys → Argo CD syncs to EKS
+  * Rollback: `git revert` → Argo auto-sync; DB snapshots used for data restore
 
-|  Positive                     |  Why it matters                                                                   |
-| ----------------------------- | --------------------------------------------------------------------------------- |
-| **Strong isolation**          | Backend pods & Aurora PG reside in private subnets – no direct Internet exposure. |
-| **Clear traffic flow**        | Users → Route 53 → CloudFront + WAF → ALB → EKS service → pods.                   |
-| **Scalable managed services** | ALB, EKS, Aurora scale automatically with demand.                                 |
-| **CI/CD foundation**          | GitHub Actions → ECR push already shown.                                          |
+---
 
-### 🔧 Critical gaps & quick fixes
+## 7. Observability & Security
 
-|  Gap                          |  Impact                                                      |  Fix                                                                                       |
-| ----------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| **Missing NAT Gateway**       | Private nodes cannot pull images or patches. CI/CD breakage. | Add one NAT GW in each AZ (or at least one); route `0.0.0.0/0` from private subnets to it. |
-| **Frontend still in EKS**     | Higher cost & slower static‑file delivery.                   | Host React SPA in S3; have CloudFront origin‑group (S3 for `/`, ALB for `/api/*`).         |
-| **Security box too abstract** | Reviewers can’t see how IAM/KMS/SGs apply.                   | Draw SG dashed‑lines; add IRSA key icon on pods; show KMS lock on RDS & ECR.               |
-| **Deploy step not shown**     | CI/CD loop looks incomplete.                                 | Arrow: **GitHub Actions → (kubectl/Helm) → EKS**.                                          |
+| Area               | Tooling / Practice                                                |
+| ------------------ | ----------------------------------------------------------------- |
+| **Logs**           | Fluent Bit from EKS → Central S3; CloudWatch for Fargate logs     |
+| **Metrics**        | Prometheus Operator, Grafana dashboards, Container Insights       |
+| **Tracing**        | AWS X-Ray                                                         |
+| **Secrets**        | AWS Secrets Manager with CSI driver, rotated every 30 days        |
+| **Security Tools** | GuardDuty, IAM Access Analyzer, SSM Session Manager (no SSH), WAF |
 
-### 📈 Result after fixes
+---
 
-* **Functionality** – Nodes reach ECR & OS repos via NAT.
-* **Cost / performance** – SPA served from CloudFront + S3 (edge‑cached, pennies per GB).
-* **Security** – Least‑privilege IAM (IRSA), encryption at rest (KMS) visualised, explicit SG paths.
+## 8. Cost-Optimisation Strategies
 
-Once these minor visual tweaks are applied, the diagram meets every rubric bullet for Innovate Inc.’s assignment.
+| Lever                                   | Estimated Saving  | Notes                                      |
+| --------------------------------------- | ----------------- | ------------------------------------------ |
+| **Graviton Spot for stateless pods**    | 60–70%            | Graviton processors + spot market pricing  |
+| **Karpenter rightsizing/consolidation** | 10–20%            | Packs pods optimally; removes idle nodes   |
+| **Fargate scale-to-zero**               | 100% when idle    | Pay only for running pods                  |
+| **S3 Intelligent-Tiering**              | \~30%             | Automatically moves logs to colder storage |
+| **RDS storage autoscaling**             | Pay-for-GB used   | Avoids overprovisioning unused storage     |
+| **Dev environment auto-shutdown**       | \~50% off-hours   | Stops non-prod clusters after work hours   |
+| **Budgets & Anomaly Detection**         | Early cost alerts | Catch spikes before they snowball          |
+
+---
+
+## 📈 Summary
+
+This architecture allows Innovate Inc. to:
+
+* Start lean with Fargate and pay-per-use compute
+* Scale efficiently using Spot and Graviton nodes
+* Follow modern GitOps and CI/CD automation
+* Maintain strong security and observability
+* Optimize cost with automated tooling and guardrails
+
+It aligns with the AWS Well-Architected Framework and provides a solid, scalable foundation for growth.
