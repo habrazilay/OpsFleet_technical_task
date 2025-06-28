@@ -55,7 +55,7 @@ resource "kubernetes_namespace" "karpenter" {
 ############################
 locals {
   karpenter_values = yamlencode({
-
+    controller = { replicas = 2 }     #  ← add this line
     serviceAccount = {
       annotations = {
         "eks.amazonaws.com/role-arn" = aws_iam_role.karpenter.arn

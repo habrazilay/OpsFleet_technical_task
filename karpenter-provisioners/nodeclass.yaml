@@ -3,8 +3,8 @@ kind: EC2NodeClass
 metadata:
   name: ec2-nodeclass-default
 spec:
-  role: KarpenterNodeRole-opsfleet-eks-dev-us-east-1   # <- instance profile!
   amiFamily: AL2023
+  instanceProfile: KarpenterNodeRole-opsfleet-eks-dev-us-east-1
 
   subnetSelectorTerms:
   - tags:
