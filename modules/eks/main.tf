@@ -27,8 +27,8 @@ module "this" {
       ami_type       = "AL2_ARM_64"       # ← back to Amazon Linux 2
       instance_types = ["t4g.medium"]     # 2 vCPU / 4 GiB ‑ keeps the CNI happy
       capacity_type  = "ON_DEMAND"
-      desired_size   = 1
-      min_size       = 1
+      desired_size   = 2
+      min_size       = 2
       max_size       = 3
       iam_role_additional_policies = {
         ssm = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
