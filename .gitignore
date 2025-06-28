@@ -9,6 +9,7 @@ override.tf
 override.tf.json
 **/.terraform/*
 .terraform.lock.hcl
+*tfplan*
 # VS Code
 .vscode/*
 # macOS & Linux cruft

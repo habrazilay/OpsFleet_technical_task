@@ -28,66 +28,82 @@ resource "aws_iam_role" "karpenter" {
   tags               = var.tags
 }
 
-# minimal controller permissions (same as upstream docs)
-resource "aws_iam_role_policy" "karpenter" {
-  name   = "karpenter-controller"
-  role   = aws_iam_role.karpenter.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        "Effect": "Allow",
-        "Action": [
-          "ec2:CreateLaunchTemplate",
-          "ec2:CreateFleet",
-          "ec2:RunInstances",
-          "ec2:CreateTags",
-          "ec2:TerminateInstances",
-          "ec2:Describe*",
-          "ec2:DeleteLaunchTemplate",
-          "ec2:DeleteTags",
-          "ec2:ModifyLaunchTemplate",
-          "ec2:ModifyInstanceAttribute"
-        ],
-        "Resource": "*"
-      },
-      {
-        "Effect": "Allow",
-        "Action": [
-          "pricing:GetProducts"
-        ],
-        "Resource": "*"
-      },
-      {
-        "Effect": "Allow",
-        "Action": [
-          "ssm:GetParameter"
-        ],
-        "Resource": "arn:aws:ssm:*:*:parameter/aws/service/*"
-      },
-      {
-        "Effect": "Allow",
-        "Action": [
-          "iam:CreateInstanceProfile",
-          "iam:DeleteInstanceProfile",
-          "iam:AddRoleToInstanceProfile",
-          "iam:RemoveRoleFromInstanceProfile",
-          "iam:GetInstanceProfile",
-          "iam:TagInstanceProfile",
-          "iam:PassRole"
-        ],
-        Resource = "*"
-      },
-      {
-        "Effect": "Allow",
-        "Action": [
-          "iam:CreateServiceLinkedRole"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
+resource "aws_iam_policy" "karpenter_controller" {
+  name        = "${var.cluster_name}-karpenter-controller"
+  path        = "/"
+  description = "Permissions for Karpenter to manage compute resources"
+  policy      = file("${path.module}/policy-karpenter-controller.json")
 }
+
+resource "aws_iam_role_policy_attachment" "karpenter_controller_attach" {
+  role       = aws_iam_role.karpenter.name
+  policy_arn = aws_iam_policy.karpenter_controller.arn
+}
+
+
+
+# minimal controller permissions (same as upstream docs)
+# resource "aws_iam_role_policy" "karpenter" {
+#   name   = "karpenter-controller"
+#   role   = aws_iam_role.karpenter.id
+#   policy = jsonencode({
+#     Version = "2012-10-17"
+#     Statement = [
+#       {
+#         "Effect": "Allow",
+#         "Action": [
+#           "ec2:CreateLaunchTemplate",
+#           "ec2:CreateFleet",
+#           "ec2:RunInstances",
+#           "ec2:CreateTags",
+#           "ec2:TerminateInstances",
+#           "ec2:Describe*",
+#           "ec2:DeleteLaunchTemplate",
+#           "ec2:DeleteTags",
+#           "ec2:ModifyLaunchTemplate",
+#           "ec2:ModifyInstanceAttribute"
+#         ],
+#         "Resource": "*"
+#       },
+#       {
+#         "Effect": "Allow",
+#         "Action": [
+#           "pricing:GetProducts"
+#         ],
+#         "Resource": "*"
+#       },
+#       {
+#         "Effect": "Allow",
+#         "Action": [
+#           "ssm:GetParameter"
+#         ],
+#         "Resource": "arn:aws:ssm:*:*:parameter/aws/service/*"
+#       },
+#       {
+#         "Effect": "Allow",
+#         "Action": [
+#           "iam:CreateInstanceProfile",
+#           "iam:DeleteInstanceProfile",
+#           "iam:AddRoleToInstanceProfile",
+#           "iam:RemoveRoleFromInstanceProfile",
+#           "iam:GetInstanceProfile",
+#           "iam:TagInstanceProfile",
+#           "iam:PassRole",
+#           "iam:TagInstanceProfile",
+#           "iam:TagRole"
+#         ],
+#         Resource = "*"
+#       },
+#       {
+#         "Effect": "Allow",
+#         "Action": [
+#           "iam:CreateServiceLinkedRole"
+#         ]
+#         Resource = "*"
+#       }
+#     ]
+#   })
+# }
 
 ############################
 # 2.  Namespace
@@ -104,7 +120,7 @@ resource "kubernetes_namespace" "karpenter" {
 locals {
   karpenter_values = yamlencode({
     controller = {
-      replicas = 1                              # 🡅 chart expects this key
+      replicas = 1                            
     }
 
     serviceAccount = {
@@ -118,7 +134,6 @@ locals {
       clusterEndpoint = var.cluster_endpoint
     }
 
-    # allow scheduling on the bootstrap node
     tolerations = [{
       key      = "CriticalAddonsOnly"
       operator = "Exists"
@@ -128,22 +143,40 @@ locals {
 }
 
 
+# resource "helm_release" "karpenter" {
+#   name       = "karpenter"
+#   namespace  = kubernetes_namespace.karpenter.metadata[0].name
+
+#   repository = "oci://public.ecr.aws/karpenter"
+#   chart      = "karpenter"
+#   version    = "0.37.2"               
+#   timeout    = 600
+
+#     set {
+#     name  = "controller.replicaCount"
+#     value = 2
+#   }
+
+#   values = [local.karpenter_values]
+
+#   recreate_pods   = true  
+#   cleanup_on_fail = true
+
+#   depends_on = [aws_iam_role_policy.karpenter]
+# }
+
 resource "helm_release" "karpenter" {
-  name             = "karpenter"
-  namespace        = kubernetes_namespace.karpenter.metadata[0].name
-  repository       = "oci://public.ecr.aws/karpenter"
-  chart            = "karpenter"
-  version          = var.helm_chart_version
-  create_namespace = false
+  name       = "karpenter"
+  chart      = "karpenter"
+  repository = "oci://public.ecr.aws/karpenter"
+  version    = var.helm_chart_version   # e.g. "0.37.2"
+  namespace  = kubernetes_namespace.karpenter.metadata[0].name
 
-  values = [
-    yamlencode({
-      controller = {
-        replicaCount = 2
-        affinity     = {}   # empty map removes the defaults
-      }
-    })
-  ]
+  atomic           = true   # one‑step transaction; auto‑rollback on error
+  cleanup_on_fail  = true   # purge the bad revision + lock if rollback fails
+  timeout          = 900    # give CRDs/webhooks time
+  recreate_pods    = true
 
-  depends_on = [aws_iam_role_policy.karpenter]
+  depends_on       = [aws_iam_role_policy_attachment.karpenter_controller_attach]
+  values           = [local.karpenter_values]
 }

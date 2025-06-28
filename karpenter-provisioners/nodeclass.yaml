@@ -3,20 +3,15 @@ kind: EC2NodeClass
 metadata:
   name: ec2-nodeclass-default
 spec:
-  role: opsfleet-eks-dev-us-east-1-karpenter-controller          # ✓
-  amiFamily: AL2023                                              # ✓ latest Amazon Linux
-
-  # --- pick all PRIVATE subnets that belong to this cluster ---
+  role: opsfleet-eks-dev-us-east-1-karpenter-controller        
+  amiFamily: AL2023                                             
   subnetSelectorTerms:
   - tags:
       karpenter.sh/discovery/opsfleet-eks-dev-us-east-1: "owned"
       kubernetes.io/role/internal-elb: "1"
-
-  # --- pick the managed SG that the EKS module created --------
   securityGroupSelectorTerms:
   - tags:
       "aws:eks:cluster-name": "opsfleet-eks-dev-us-east-1"
-
   tags:
     owner: daniel
     project: opsfleet-test

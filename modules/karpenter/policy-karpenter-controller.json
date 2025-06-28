@@ -34,7 +34,9 @@
       {
         "Effect": "Allow",
         "Action": [
-          "iam:PassRole"
+          "iam:PassRole",
+          "iam:TagRole",
+          "iam:TagInstanceProfile"
         ],
         "Resource": "arn:aws:iam::*:role/KarpenterNodeRole-*"
       },

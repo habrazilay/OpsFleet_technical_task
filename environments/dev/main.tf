@@ -62,6 +62,11 @@ module "karpenter" {
   oidc_provider_arn  = module.eks.oidc_provider_arn
   private_subnet_ids = module.vpc.private_subnets
   helm_chart_version = var.karpenter_chart_version
+  providers = {
+    aws        = aws
+    kubernetes = kubernetes.eks
+    helm       = helm.eks
+  }
 
   tags = {
     Org      = local.org

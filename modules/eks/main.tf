@@ -17,12 +17,13 @@ module "this" {
   subnet_ids = var.private_subnets          # private only; public for LB-ingress
 
   enable_irsa = true
+  
 
   ########################################
   # Minimal managed node group (bootstrap)
   ########################################
   eks_managed_node_groups = {
-    core = {
+    core_v2 = {
       ami_type       = "AL2_ARM_64"       # ← back to Amazon Linux 2
       instance_types = ["t4g.medium"]     # 2 vCPU / 4 GiB ‑ keeps the CNI happy
       capacity_type  = "ON_DEMAND"
@@ -32,6 +33,9 @@ module "this" {
       iam_role_additional_policies = {
         ssm = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
       }
+          launch_template = {
+      version = "$Latest"
+    }
     }
   }
 
@@ -44,14 +48,9 @@ module "this" {
     kube-proxy = { most_recent = true }
     vpc-cni    = { most_recent = true }
   }
+  
 
-  tags = merge(
-  var.tags,
-  {
-    Name                                             = "${var.cluster_name}-cluster"
-    "karpenter.sh/discovery/${var.cluster_name}"     = "shared"   # ← restore
-  }
-)
+  tags = var.tags
 
   ########################################################################
   # Use CONFIG_MAP only → the module will render aws‑auth
@@ -68,7 +67,9 @@ access_entries = {
       }
     }
   }
+  
 }
+
 }
 
 
