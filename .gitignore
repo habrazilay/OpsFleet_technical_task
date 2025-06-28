@@ -16,4 +16,6 @@ override.tf.json
 .DS_Store
 # Sensitive data
 *.csv
+#Backups
+/backups
 

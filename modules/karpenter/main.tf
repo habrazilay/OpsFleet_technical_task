@@ -41,70 +41,6 @@ resource "aws_iam_role_policy_attachment" "karpenter_controller_attach" {
 }
 
 
-
-# minimal controller permissions (same as upstream docs)
-# resource "aws_iam_role_policy" "karpenter" {
-#   name   = "karpenter-controller"
-#   role   = aws_iam_role.karpenter.id
-#   policy = jsonencode({
-#     Version = "2012-10-17"
-#     Statement = [
-#       {
-#         "Effect": "Allow",
-#         "Action": [
-#           "ec2:CreateLaunchTemplate",
-#           "ec2:CreateFleet",
-#           "ec2:RunInstances",
-#           "ec2:CreateTags",
-#           "ec2:TerminateInstances",
-#           "ec2:Describe*",
-#           "ec2:DeleteLaunchTemplate",
-#           "ec2:DeleteTags",
-#           "ec2:ModifyLaunchTemplate",
-#           "ec2:ModifyInstanceAttribute"
-#         ],
-#         "Resource": "*"
-#       },
-#       {
-#         "Effect": "Allow",
-#         "Action": [
-#           "pricing:GetProducts"
-#         ],
-#         "Resource": "*"
-#       },
-#       {
-#         "Effect": "Allow",
-#         "Action": [
-#           "ssm:GetParameter"
-#         ],
-#         "Resource": "arn:aws:ssm:*:*:parameter/aws/service/*"
-#       },
-#       {
-#         "Effect": "Allow",
-#         "Action": [
-#           "iam:CreateInstanceProfile",
-#           "iam:DeleteInstanceProfile",
-#           "iam:AddRoleToInstanceProfile",
-#           "iam:RemoveRoleFromInstanceProfile",
-#           "iam:GetInstanceProfile",
-#           "iam:TagInstanceProfile",
-#           "iam:PassRole",
-#           "iam:TagInstanceProfile",
-#           "iam:TagRole"
-#         ],
-#         Resource = "*"
-#       },
-#       {
-#         "Effect": "Allow",
-#         "Action": [
-#           "iam:CreateServiceLinkedRole"
-#         ]
-#         Resource = "*"
-#       }
-#     ]
-#   })
-# }
-
 ############################
 # 2.  Namespace
 ############################
@@ -119,10 +55,7 @@ resource "kubernetes_namespace" "karpenter" {
 ############################
 locals {
   karpenter_values = yamlencode({
-    controller = {
-      replicas = 1                            
-    }
-
+    controller = { replicas = 2 }     #  ← add this line
     serviceAccount = {
       annotations = {
         "eks.amazonaws.com/role-arn" = aws_iam_role.karpenter.arn
@@ -142,29 +75,6 @@ locals {
   })
 }
 
-
-# resource "helm_release" "karpenter" {
-#   name       = "karpenter"
-#   namespace  = kubernetes_namespace.karpenter.metadata[0].name
-
-#   repository = "oci://public.ecr.aws/karpenter"
-#   chart      = "karpenter"
-#   version    = "0.37.2"               
-#   timeout    = 600
-
-#     set {
-#     name  = "controller.replicaCount"
-#     value = 2
-#   }
-
-#   values = [local.karpenter_values]
-
-#   recreate_pods   = true  
-#   cleanup_on_fail = true
-
-#   depends_on = [aws_iam_role_policy.karpenter]
-# }
-
 resource "helm_release" "karpenter" {
   name       = "karpenter"
   chart      = "karpenter"
@@ -179,4 +89,48 @@ resource "helm_release" "karpenter" {
 
   depends_on       = [aws_iam_role_policy_attachment.karpenter_controller_attach]
   values           = [local.karpenter_values]
+}
+
+############################
+# 4.  Node IAM role + profile
+############################
+data "aws_iam_policy" "eks_worker" {
+  arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+}
+data "aws_iam_policy" "cni" {
+  arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+}
+data "aws_iam_policy" "ecr_readonly" {
+  arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+resource "aws_iam_role" "karpenter_node" {
+  name               = "KarpenterNodeRole-${var.cluster_name}"
+  assume_role_policy = data.aws_iam_policy_document.assume_nodes.json
+  tags               = var.tags
+}
+
+data "aws_iam_policy_document" "assume_nodes" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "node_policies" {
+  for_each = {
+    eks_worker = data.aws_iam_policy.eks_worker.arn
+    cni        = data.aws_iam_policy.cni.arn
+    ecr        = data.aws_iam_policy.ecr_readonly.arn
+  }
+  role       = aws_iam_role.karpenter_node.name
+  policy_arn = each.value
+}
+
+resource "aws_iam_instance_profile" "karpenter_node" {
+  name = aws_iam_role.karpenter_node.name
+  role = aws_iam_role.karpenter_node.name
 }

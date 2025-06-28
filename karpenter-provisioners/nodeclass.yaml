@@ -3,15 +3,17 @@ kind: EC2NodeClass
 metadata:
   name: ec2-nodeclass-default
 spec:
-  role: opsfleet-eks-dev-us-east-1-karpenter-controller        
-  amiFamily: AL2023                                             
+  amiFamily: AL2023
+  instanceProfile: KarpenterNodeRole-opsfleet-eks-dev-us-east-1
+
   subnetSelectorTerms:
   - tags:
       karpenter.sh/discovery/opsfleet-eks-dev-us-east-1: "owned"
-      kubernetes.io/role/internal-elb: "1"
+
   securityGroupSelectorTerms:
   - tags:
-      "aws:eks:cluster-name": "opsfleet-eks-dev-us-east-1"
+      "aws:eks:cluster-name": opsfleet-eks-dev-us-east-1
+
   tags:
     owner: daniel
     project: opsfleet-test
