@@ -1,127 +1,158 @@
-# Innovate Inc. AWS Architecture Design Document
+# Innovate Inc. – Cloud Architecture Design
+
+*Version 1.1 – 29 June 2025*
+
+---
+
+## Table of Contents
+
+1. [Executive Summary](#1-executive-summary)
+2. [AWS Account Structure](#2-aws-account-structure)
+3. [Network Design](#3-network-design)
+4. [Kubernetes Platform (EKS)](#4-kubernetes-platform-eks)
+5. [CI/CD & Infrastructure‑as‑Code](#5-cicd--infrastructure-as-code)
+6. [Data Layer (PostgreSQL)](#6-data-layer-postgresql)
+7. [Security & Compliance](#7-security--compliance)
+8. [Cost Management](#8-cost-management)
+9. [Future Roadmap](#9-future-roadmap)
+
+---
 
 ## 1. Executive Summary
 
-Innovate Inc. will launch its Python/Flask REST API and React single-page application (SPA) on AWS using Amazon EKS (managed Kubernetes). The architecture is designed to be lean and cost-effective at launch (leveraging Fargate and serverless components) while providing scalability to millions of users through Spot/Graviton nodes, Multi-AZ RDS PostgreSQL, and optional cross-region failover. Security, automation, and cost-optimization are embedded from day one.
+Innovate Inc. will launch its Flask REST API and React SPA on **Amazon EKS**.
+We begin *serverless‑first* (EKS Fargate) for low ops‑overhead, then scale to **Spot/Graviton nodes** via Karpenter as user load grows.
+Infrastructure is codified with Terraform; state is stored remotely and securely in S3+KMS with DynamoDB locking.
+The solution meets AWS Well‑Architected pillars—**security**, **reliability**, **performance‑efficiency**, **cost‑optimisation** and **operational excellence**.
 
 ---
 
-## 2. Account / Project Structure
+## 2. AWS Account Structure
 
-| Account                          | Purpose                                     | Key Services                                        | Notes                                                        |
-| -------------------------------- | ------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------ |
-| **Management / Shared-Services** | Centralized security, billing, IAM, logging | IAM Identity Center, GuardDuty, AWS Config, S3 Logs | No workloads. Central log archive. Budget tracking.          |
-| **Sandbox / Dev**                | Testing, feature development                | EKS-Dev, RDS-Dev (small), S3 Artifacts              | Budget limits, auto-shutdown for cost savings.               |
-| **Production**                   | User-facing workloads & data                | EKS-Prod, RDS-Prod, CloudFront, KMS, WAF            | Strict SCPs, delegated GuardDuty admin, no public DB access. |
+| Account                  | Purpose                                                              | Notes                                           |
+| ------------------------ | -------------------------------------------------------------------- | ----------------------------------------------- |
+| **Landing / Management** | Organizations root, SCPs, GuardDuty aggregator, central KMS keys     | No workloads. Billing view only.                |
+| **Shared‑Services**      | S3 artifact bucket, DynamoDB state‑lock table, central ECR & logging | VPC endpoints for S3/ECR.                       |
+| **Dev**                  | EKS dev cluster, preview RDS, cost‑‑constrained                      | Developers assume role via IAM Identity Center. |
+| **Prod**                 | EKS prod, RDS Multi‑AZ, KMS CMKs                                     | Strict IAM least privilege; CloudTrail lake.    |
 
-**Why three accounts?**
-Follows AWS Well-Architected best practices for isolation, billing clarity, blast-radius reduction, and least-privilege access.
-
----
-
-## 3. Networking Design
-
-**VPC Layout:** One VPC per account:
-
-* Dev: `10.10.0.0/16`
-* Prod: `10.20.0.0/16`
-
-Each VPC spans **3 Availability Zones**:
-
-* **Public Subnet (/20)**: ALB, NAT Gateway (one per AZ)
-* **Private-App Subnet (/20)**: EKS/Fargate ENIs
-* **Private-Data Subnet (/24)**: RDS, ElastiCache (future)
-
-**Security Features:**
-
-* NAT Gateway enables egress without exposing internal resources
-* Security Groups restrict access (e.g., ALB only allows HTTPS 443 to API)
-* WAFv2 + CloudFront in front of ALB
-* VPC Flow Logs stream to central log account (S3, 7-day retention)
+Rationale: *blast‑radius isolation*, clear cost allocation, separation of duties.
 
 ---
 
-## 4. Compute Platform – Amazon EKS
+## 3. Network Design
 
-### 4.1 Cluster Layout
+* **VPC 10.0.0.0/16** split across **three AZs**.
+* Public subnets: ALB, NAT GW (one per AZ).
+* Private‑App subnets: EKS nodes/pods.
+* Private‑Data subnets: RDS only (no route to NAT).
+* **VPC Endpoints**: S3 & DynamoDB (Gateway), ECR (Interface) – removes NAT egress charges.
+* **NetworkPolicies**: default `deny‑all`, explicit `allow` API ↔ DB.
 
-| Node Group                    | Type                  | Use-Case                         | Cost Profile                    |
-| ----------------------------- | --------------------- | -------------------------------- | ------------------------------- |
-| **Fargate Profile (default)** | Serverless            | Low initial traffic, system pods | Pay-per-pod, scale-to-zero      |
-| **Managed NG – System**       | t4g.small (On-Demand) | kube-system, ALB Controller      | Always ≥1 per AZ                |
-| **Karpenter – Spot arm64**    | Graviton (m7g, c7g)   | API & SPA pods                   | \~60–70% cheaper than On-Demand |
-| **Karpenter – Spot x86**      | AMD (m7a, c7a)        | x86-only workloads               | Backup for incompatible images  |
-
-* **Scaling:** Horizontal Pod Autoscaler (HPA) + Karpenter (sub-minute response)
-* **Isolation:** Namespaces per stage (e.g., `prod`, `dev`, `ci-preview-*`)
-* **IAM Roles for Service Accounts (IRSA):** ALB Controller, External-DNS, Cluster Autoscaler
-
-### 4.2 Container Strategy
-
-* **Image Build:** Multi-arch (linux/arm64, amd64) using Docker `buildx` in GitHub Actions
-* **Container Registry:** Amazon ECR (with image scanning)
-* **Deployment:** Helm charts version-controlled; Argo CD handles GitOps deployments
-
----
-
-## 5. Database Layer – PostgreSQL
-
-| Feature               | Details                                     |
-| --------------------- | ------------------------------------------- |
-| **Service**           | Amazon RDS PostgreSQL (Multi-AZ)            |
-| **Backups**           | Daily snapshots (7–35 days) to S3 Glacier   |
-| **High Availability** | Multi-AZ standby, automatic failover (<60s) |
-| **Disaster Recovery** | Future: Cross-region replica (eu-west-1)    |
-| **Encryption**        | AES-256 at rest via KMS, TLS in transit     |
+```hcl
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  nat_gateway_single = false               # one per AZ
+  enable_dns_hostnames = true
+  enable_s3_endpoint   = true
+  azs                  = ["us-east-1a","us-east-1b","us-east-1c"]
+  cidr                 = "10.0.0.0/16"
+}
+```
 
 ---
 
-## 6. CI/CD & Infrastructure as Code
+## 4. Kubernetes Platform (EKS)
 
-* **Source Control:** GitHub
-* **Workflows:**
+| Component     | Day‑0                                             | Scale‑up                                                                                               |
+| ------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Control plane | EKS v1.32, OIDC, all control‑plane logs           | Upgrade every 12 mo (no extended‑support fee)                                                          |
+| Workloads     | **Fargate profile** for `default` & `kube‑system` | Add EC2 Graviton nodegroup + **Karpenter 1.5.0 (API v1) Spot provisioners** (`spot-arm64`, `spot-x86`) |
+| Autoscaling   | HPA + VPA                                         | Karpenter consolidation & TTL‑empty                                                                    |
+| Ingress       | ALB Controller + HTTPS                            | Add CloudFront+WAF global edge cache                                                                   |
+| Service Mesh  | (future) Istio‑ambient                            | Optional zero‑trust                                                                                    |
 
-  * Terraform (`/infra`): PR plan → Merge apply (assumes role via OIDC)
-  * Docker Buildx matrix builds → Push to ECR
-  * Helm deploys → Argo CD syncs to EKS
-  * Rollback: `git revert` → Argo auto-sync; DB snapshots used for data restore
+### Container workflow
 
----
+```bash
+# multi‑arch build
+docker buildx build --platform=linux/arm64,linux/amd64 \
+  -t ${AWS_ACCOUNT}.dkr.ecr.us-east-1.amazonaws.com/api:${GIT_SHA} \
+  --push .
+```
 
-## 7. Observability & Security
-
-| Area               | Tooling / Practice                                                |
-| ------------------ | ----------------------------------------------------------------- |
-| **Logs**           | Fluent Bit from EKS → Central S3; CloudWatch for Fargate logs     |
-| **Metrics**        | Prometheus Operator, Grafana dashboards, Container Insights       |
-| **Tracing**        | AWS X-Ray                                                         |
-| **Secrets**        | AWS Secrets Manager with CSI driver, rotated every 30 days        |
-| **Security Tools** | GuardDuty, IAM Access Analyzer, SSM Session Manager (no SSH), WAF |
-
----
-
-## 8. Cost-Optimisation Strategies
-
-| Lever                                   | Estimated Saving  | Notes                                      |
-| --------------------------------------- | ----------------- | ------------------------------------------ |
-| **Graviton Spot for stateless pods**    | 60–70%            | Graviton processors + spot market pricing  |
-| **Karpenter rightsizing/consolidation** | 10–20%            | Packs pods optimally; removes idle nodes   |
-| **Fargate scale-to-zero**               | 100% when idle    | Pay only for running pods                  |
-| **S3 Intelligent-Tiering**              | \~30%             | Automatically moves logs to colder storage |
-| **RDS storage autoscaling**             | Pay-for-GB used   | Avoids overprovisioning unused storage     |
-| **Dev environment auto-shutdown**       | \~50% off-hours   | Stops non-prod clusters after work hours   |
-| **Budgets & Anomaly Detection**         | Early cost alerts | Catch spikes before they snowball          |
+Manifests deployed via **Argo CD** or `kubectl apply` from CI.
 
 ---
 
-## 📈 Summary
+## 5. CI/CD & Infrastructure‑as‑Code
 
-This architecture allows Innovate Inc. to:
+* **Terraform state backend** (shared‑services account):
 
-* Start lean with Fargate and pay-per-use compute
-* Scale efficiently using Spot and Graviton nodes
-* Follow modern GitOps and CI/CD automation
-* Maintain strong security and observability
-* Optimize cost with automated tooling and guardrails
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "innovateinc-tfstate-prod"
+    key            = "eks/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "innovateinc-tfstate-lock"
+    encrypt        = true
+    kms_key_id     = "alias/innovateinc-terraform"
+  }
+}
+```
 
-It aligns with the AWS Well-Architected Framework and provides a solid, scalable foundation for growth.
+* **State locking**: `LockID` attribute in DynamoDB prevents concurrent `apply`.
+* **Makefile targets** `init`, `plan`, `apply`, `lint` (tflint, tfsec, checkov).
+* GitHub Actions uses OIDC → IAM role (`terraform-ci-role`) with least privilege.
+
+---
+
+## 6. Data Layer (PostgreSQL)
+
+* **Amazon RDS PostgreSQL 15** – Multi‑AZ, 15‑min read‑replica lag budget.
+* Storage encrypted with KMS CMK `alias/rds-prod`.
+* Automated snapshots 35 days; cross‑region copy nightly for DR.
+* Connection secret stored in **AWS Secrets Manager**, mounted via CSI.
+
+---
+
+## 7. Security & Compliance
+
+| Control                 | Implementation                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **IAM Least‑Privilege** | `policy-karpenter-controller.json` trimmed to specific `Describe*` + `CreateLaunchTemplate` actions with **resource‑tag condition**. |
+| **Pod → AWS**           | IRSA per service (`ServiceAccount annotations`).                                                                                     |
+| **Cluster access**      | Public‑endpoint CIDRs: corporate VPN / `10.0.0.0/8` only.                                                                            |
+| **Secrets**             | No plaintext vars; Secrets Manager & KMS.                                                                                            |
+| **Network**             | Security Groups restrict 443 in; NetworkPolicy restrict east‑west.                                                                   |
+| **Logging**             | ALB, VPC FlowLogs, EKS audit → CloudWatch → S3 lifecycle → Glacier.                                                                  |
+| **Backup / DR**         | RDS snapshots + S3 replication; `deletion_protection = true`.                                                                        |
+
+---
+
+## 8. Cost Management
+
+* **Graviton Spot** nodes save 60–70 % over x86 On‑Demand.
+* **S3 Gateway Endpoints** remove \$0.045/GB NAT egress.
+* **AWS Budgets** with SNS alarm at 80 % of monthly cap.
+* Adopt **Compute Savings Plan** after steady baseline ≥ \$500/mo.
+
+---
+
+## 9. Future Roadmap
+
+* **Multi‑Region**: add us‑west‑2 standby via Route 53 fail‑over & read‑replica.
+* **Service Mesh**: Istio ambient for mTLS + traffic shaping.
+* **Compliance**: SOC 2 + AWS Artifact controls mapping.
+* **Observability**: Grafana Cloud preview → Amazon Managed Prometheus.
+
+---
+
+### High‑Level Diagram
+
+The draw\.io / PlantUML source lives in `diagrams/Innovate-Inc-Architecture.drawio`. Rendered PNG shown below in the repo README.
+
+---
+
+*Last review: Daniel Schmidt & ChatGPT, 29 Jun 2025*
