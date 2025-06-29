@@ -79,7 +79,7 @@ resource "helm_release" "karpenter" {
   name       = "karpenter"
   chart      = "karpenter"
   repository = "oci://public.ecr.aws/karpenter"
-  version    = var.helm_chart_version   # e.g. "0.37.2"
+  version    = "1.*"
   namespace  = kubernetes_namespace.karpenter.metadata[0].name
 
   atomic           = true   # one‑step transaction; auto‑rollback on error

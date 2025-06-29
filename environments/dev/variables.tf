@@ -57,6 +57,7 @@ variable "single_nat_gateway" {
 ############################
 # EKS                      #
 ############################
+
 variable "cluster_version" {
   description = <<EOF
 (Optional) Desired EKS control-plane version. Leave null for the latest GA
@@ -69,10 +70,11 @@ EOF
 ############################
 # Karpenter                #
 ############################
+
 variable "karpenter_chart_version" {
-  description = "Helm chart version to install."
+  description = "Helm chart version; leave empty to install latest."
   type        = string
-  default     = "0.40.0"       # ≥0.40 advertises compatibility with 1.32
+  default     = ""
 }
 
 ############################
