@@ -27,8 +27,7 @@
 
 | Diagram                             | File |
 |-------------------------------------|------|
-| AWS High-Level PNG                  | [docs/diagrams/Innovate Inc-aws.png](docs/diagrams/Innovate%20Inc-aws.png) |
-| AWS High-Level draw.io (XML)        | [docs/diagrams/Innovate-Inc-Cloud-Architecture.drawio](docs/diagrams/Innovate-Inc-Cloud-Architecture.drawio) |
+| AWS High-Level PNG                  | [docs/diagrams/innovate-inc-cloud-architecture.png](docs/diagrams/innovate-inc-cloud-architecture.png) |
 | AWS HLD (alt XML)                   | [docs/diagrams/Innovate-HDL.xml](docs/diagrams/Innovate-HDL.xml) |
 | AWS HLD (alt PNG)                   | [docs/diagrams/Innovate-HDL.png](docs/diagrams/Innovate-HDL.png) |
 | GCP High-Level PNG                  | [docs/diagrams/GCP-HDL.png](docs/diagrams/GCP-HDL.png) |
